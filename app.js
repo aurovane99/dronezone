@@ -7,7 +7,7 @@
   var CACHE_HOURS = 24;
 
   var LAYERS = [
-    { id: "LT_C_AISPRHC", name: "비행금지구역", color: "#e53935", fill: 0.35, on: true, level: "bad" },
+    { id: "LT_C_AISPRHC", name: "비행금지구역", color: "#e53935", fill: 0.18, on: true, level: "bad" },
     { id: "LT_C_AISRESC", name: "비행제한구역", color: "#fb8c00", fill: 0.25, on: true, level: "warn" },
     { id: "LT_C_AISCTRC", name: "관제권 (공항 반경 9.3km)", color: "#8e24aa", fill: 0.15, on: true, level: "warn" },
     { id: "LT_C_AISFLDC", name: "경량항공기 이착륙장", color: "#c0a000", fill: 0.15, on: true, level: "warn" },
@@ -234,7 +234,8 @@
     return Promise.all([one("address", "road"), one("address", "parcel"), one("place")]).then(function (rs) {
       var out = [], seen = {};
       rs.forEach(function (list) { list.forEach(function (r) {
-        var k = r.lat.toFixed(5) + "," + r.lon.toFixed(5);
+        // 같은 주소(건물 동마다 좌표만 다른 것)는 하나만
+        var k = (r.name + "|" + r.sub).replace(/\s+/g, "");
         if (isFinite(r.lat) && !seen[k]) { seen[k] = 1; out.push(r); }
       }); });
       return out;
@@ -331,12 +332,17 @@
 
   function clean(v) { return String(v).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim(); }
   function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
-  function describe(props) {
+  var ALT = { GND: "지면", UNL: "무제한", SFC: "지면" };
+  function describe(props, L) {
     var parts = [];
     Object.keys(props).forEach(function (k) {
       var v = props[k];
       if (v === null || v === "" || typeof v === "object") return;
       v = clean(v); if (!v || v.length > 80) return;
+      if (/^\d{1,2}$/.test(v)) return;                 // 구분용 숫자(타입 코드)
+      if (L && L.name.indexOf(v) === 0) return;         // 구역 이름과 같은 글
+      v = v.replace(/^RK\s+/, "");                       // 국가 접두어
+      if (ALT[v]) v = "고도 " + ALT[v];
       if (parts.indexOf(v) < 0) parts.push(v);
     });
     return parts.join(" · ");
@@ -357,7 +363,7 @@
       "<div style='color:var(--muted);margin:4px 0 6px'>" + lat.toFixed(5) + ", " + lon.toFixed(5) + "</div>";
     h.forEach(function (x) {
       html += "<div class='z'><span class='sw' style='display:inline-block;vertical-align:middle;border-color:" + x.L.color +
-        ";background:" + x.L.color + "55'></span> <b>" + esc(x.L.name) + "</b><br>" + esc(describe(x.z.props)) + "</div>";
+        ";background:" + x.L.color + "55'></span> <b>" + esc(x.L.name) + "</b><br>" + esc(describe(x.z.props, x.L)) + "</div>";
     });
     html += "<div style='margin-top:8px;color:var(--muted)'>참고용입니다. 실제 승인은 " +
       "<a href='https://drone.onestop.go.kr' target='_blank' rel='noopener'>드론원스톱</a>에서 하세요.</div>";
