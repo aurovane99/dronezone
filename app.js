@@ -12,7 +12,7 @@
     { id: "LT_C_AISCTRC", name: "관제권 (공항 반경 9.3km)", color: "#8e24aa", fill: 0.15, on: true, level: "warn" },
     { id: "LT_C_AISFLDC", name: "경량항공기 이착륙장", color: "#c0a000", fill: 0.15, on: true, level: "warn" },
     { id: "LT_C_AISDNGC", name: "위험구역", color: "#c2185b", fill: 0.2, on: false, level: "warn" },
-    { id: "LT_C_AISALTC", name: "경계구역", color: "#6d4c41", fill: 0.15, on: false, level: "warn" },
+    { id: "LT_C_AISALTC", name: "경계구역", color: "#6d4c41", fill: 0.15, on: false, level: "caution" },
     { id: "LT_C_AISUAC", name: "초경량비행장치공역 (승인 없이 비행 가능)", color: "#43a047", fill: 0.2, on: true, level: "ok" }
   ];
 
@@ -330,15 +330,28 @@
   // 고도 글자 해석: "5 000 AMSL" → 해발 5,000ft(1,524m), "500FT HEI"/"1 000 AGL" → 지상 …, FL180, GND/SFC, UNL
   function parseAlt(s) {
     var t = String(s).toUpperCase().replace(/\s+/g, " ").trim();
-    if (/^(GND|SFC)$/.test(t)) return { ft: 0, txt: "지면" };
+    if (/^(GND|SFC)$/.test(t)) return { ft: 0, txt: "지면", agl: true };
     if (t === "UNL") return { ft: 1e9, txt: "무제한" };
     var fl = /^FL\s?(\d+)$/.exec(t);
     if (fl) { var f = +fl[1] * 100; return { ft: f, txt: "FL" + fl[1] + "(약 " + Math.round(f * 0.3048).toLocaleString() + "m)" }; }
     var m = /^([\d ,]+)\s*(FT)?\s*(AMSL|MSL|AGL|HEI)?$/.exec(t);
     if (!m) return null;
     var ft = +m[1].replace(/[ ,]/g, ""); if (!isFinite(ft)) return null;
-    var ref = m[3] === "AGL" || m[3] === "HEI" ? "지상 " : (m[3] ? "해발 " : "");
-    return { ft: ft, txt: ref + ft.toLocaleString() + "ft(" + Math.round(ft * 0.3048).toLocaleString() + "m)" };
+    var agl = m[3] === "AGL" || m[3] === "HEI";
+    var ref = agl ? "지상 " : (m[3] ? "해발 " : "");
+    return { ft: ft, agl: agl, txt: ref + ft.toLocaleString() + "ft(" + Math.round(ft * 0.3048).toLocaleString() + "m)" };
+  }
+
+  // 드론은 항상 지상 150m 아래로 난다고 보고, 구역 하한이 지상 150m 이상이면 해당 없음
+  var DRONE_MAX_M = 150;
+  function aboveDrone(props) {
+    var alts = [];
+    Object.keys(props).forEach(function (k) {
+      if (/_lbl_[23]$/.test(k) && typeof props[k] === "string") { var a = parseAlt(clean(props[k])); if (a) alts.push(a); }
+    });
+    if (alts.length !== 2) return false;
+    alts.sort(function (a, b) { return a.ft - b.ft; });
+    return alts[0].agl && alts[0].ft * 0.3048 >= DRONE_MAX_M;
   }
 
   // 구역 설명 한 줄: "R20 · 지면 ~ 해발 5,000ft(1,524m)"
@@ -376,24 +389,25 @@
     return parts.join(" · ");
   }
 
+  // 판정: 드론 고도(150m) 위 구역은 빼고, 금지·승인 > 주의 > 가능
   function verdict(h) {
-    if (!h.length) return { cls: "warn", text: "구역 밖 · 150m 미만은 대부분 승인 불필요" };
-    var lv = h.map(function (x) { return x.L.level; });
-    if (lv.indexOf("bad") >= 0) return { cls: "bad", text: "비행금지 · 승인 필요" };
-    if (lv.indexOf("warn") >= 0) return { cls: "warn", text: "승인 필요" };
-    return { cls: "ok", text: "승인 없이 비행 가능" };
+    var lv = h.filter(function (x) { return !aboveDrone(x.z.props); }).map(function (x) { return x.L.level; });
+    if (lv.indexOf("bad") >= 0 || lv.indexOf("warn") >= 0) return { cls: "bad", text: "비행승인 필요" };
+    if (lv.indexOf("caution") >= 0) return { cls: "caution", text: "비행 가능 (주의)" };
+    return { cls: "ok", text: "비행 가능" };
   }
 
   // 누른 곳 옆 작은 말풍선: 판정(맨 위) → 구역(이름·코드·고도) → 주소
   var popSeq = 0;
   function showInfo(title, lat, lon, h) {
     var v = verdict(h);
-    var ok = v.cls === "ok" || !h.length;
-    var html = "<div class='pp-v first " + (ok ? "ok" : "bad") + "'>" + (ok ? "비행 가능" : "비행승인 필요") + "</div>";
+    var html = "<div class='pp-v first " + v.cls + "'>" + v.text + "</div>";
     h.forEach(function (x) {
       var d = zoneText(x.z.props, x.L) || describe(x.z.props, x.L);
-      html += "<div class='pp-z'><b><i style='border-color:" + x.L.color + ";background:" + x.L.color + "55'></i>" +
-        esc(x.L.name.replace(/ \(.*\)/, "")) + "</b>" + (d ? "<small>" + esc(d) + "</small>" : "") + "</div>";
+      var up = aboveDrone(x.z.props);
+      html += "<div class='pp-z" + (up ? " dim" : "") + "'><b><i style='border-color:" + x.L.color + ";background:" + x.L.color + "55'></i>" +
+        esc(x.L.name.replace(/ \(.*\)/, "")) + "</b>" + (d ? "<small>" + esc(d) + "</small>" : "") +
+        (up ? "<small>드론 고도(150m)보다 위 · 해당 없음</small>" : "") + "</div>";
     });
     $("layers").classList.remove("open");
     var my = ++popSeq;
