@@ -439,11 +439,11 @@
     lastInspect = Date.now();
     hideSuggest();
     M.pin(lat, lon, false);
-    showInfo("", lat, lon, hits(lat, lon).filter(function (x) { return x.L.on; }));
+    showInfo("", lat, lon, hits(lat, lon));   // 판정은 꺼 둔 구역 종류까지 모두 넣음
   }
 
   function judge(lat, lon, quiet) {
-    var h = hits(lat, lon).filter(function (x) { return x.L.on; });
+    var h = hits(lat, lon);
     var v = verdict(h);
     if (!quiet) showInfo("", lat, lon, h);
     setStatus("<b class='" + v.cls + "'>내 위치: " + (h.length ? h.map(function (x) { return x.L.name.replace(/ \(.*\)/, ""); }).join(", ") : "표시된 구역 밖") +
@@ -474,7 +474,7 @@
     $("q").value = r.name; $("q").blur();
     M.pin(r.lat, r.lon, true);
     lastInspect = 0;
-    showInfo(r.name, r.lat, r.lon, hits(r.lat, r.lon).filter(function (x) { return x.L.on; }));
+    showInfo(r.name, r.lat, r.lon, hits(r.lat, r.lon));
   }
 
   // ---------- 검색창 드롭다운 ----------
