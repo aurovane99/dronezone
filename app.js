@@ -32,13 +32,13 @@
   var CACHE_HOURS = 24;
 
   var LAYERS = [
-    { id: "LT_C_AISPRHC", name: "비행금지구역", color: "#e53935", fill: 0.18, on: true, level: "bad" },
-    { id: "LT_C_AISRESC", name: "비행제한구역", color: "#fb8c00", fill: 0.25, on: true, level: "warn" },
-    { id: "LT_C_AISCTRC", name: "관제권 (공항 반경 9.3km)", color: "#8e24aa", fill: 0.15, on: true, level: "warn" },
-    { id: "LT_C_AISFLDC", name: "경량항공기 이착륙장", color: "#c0a000", fill: 0.15, on: true, level: "warn" },
-    { id: "LT_C_AISDNGC", name: "위험구역", color: "#c2185b", fill: 0.2, on: false, level: "warn" },
-    { id: "LT_C_AISALTC", name: "경계구역", color: "#6d4c41", fill: 0.15, on: false, level: "caution" },
-    { id: "LT_C_AISUAC", name: "초경량비행장치공역 (승인 없이 비행 가능)", color: "#43a047", fill: 0.2, on: true, level: "ok" }
+    { id: "LT_C_AISPRHC", name: "비행금지구역", desc: "승인 필요", color: "#e53935", fill: 0.18, on: true, level: "bad" },
+    { id: "LT_C_AISRESC", name: "비행제한구역", desc: "승인 필요", color: "#fb8c00", fill: 0.25, on: true, level: "warn" },
+    { id: "LT_C_AISCTRC", name: "관제권", desc: "공항 반경 9.3km, 승인 필요", color: "#8e24aa", fill: 0.15, on: true, level: "warn" },
+    { id: "LT_C_AISFLDC", name: "경량항공기 이착륙장", desc: "반경 3km, 승인 필요", color: "#c0a000", fill: 0.15, on: true, level: "warn" },
+    { id: "LT_C_AISDNGC", name: "위험구역", desc: "승인 필요로 봄", color: "#c2185b", fill: 0.2, on: false, level: "warn" },
+    { id: "LT_C_AISALTC", name: "경계구역", desc: "훈련 비행이 잦은 곳, 주의", color: "#6d4c41", fill: 0.15, on: false, level: "caution" },
+    { id: "LT_C_AISUAC", name: "초경량비행장치공역", desc: "승인 없이 비행 가능", color: "#43a047", fill: 0.2, on: true, level: "ok" }
   ];
 
   var $ = function (id) { return document.getElementById(id); };
@@ -66,6 +66,7 @@
   // ---------- 지도 어댑터 ----------
   function leafletAdapter() {
     var map = window.L.map("map", { zoomControl: false, minZoom: 6, maxZoom: 19 }).setView([37.738, 127.034], 11);
+    map.attributionControl.setPrefix("<a href='https://leafletjs.com' target='_blank' rel='noopener'>Leaflet</a>");
     var road, satL;
     if (CFG.vworldKey) {
       // 브이월드 배경지도: 일반 / 위성+지명
@@ -85,6 +86,7 @@
     var meDot = null, meCircle = null, sat = false, clickFn = null, lastPolyClick = 0;
     return {
       kind: "leaflet",
+      zoomBy: function (d) { map.setZoom(map.getZoom() + d); },
       polygon: function (rings, L, onClick) {
         var pg = window.L.polygon(rings, { weight: 2, color: L.color, opacity: 0.9, fillColor: L.color, fillOpacity: L.fill });
         pg.on("click", function (e) { lastPolyClick = Date.now(); onClick(e.latlng.lat, e.latlng.lng); });
@@ -305,11 +307,10 @@
       }).then(function () { done++; setStatus("구역 정보를 받는 중… (" + done + "/" + LAYERS.length + ")"); });
     })).then(function () {
       var n = LAYERS.reduce(function (s, L) { return s + zones[L.id].length; }, 0);
-      var msg = demo ? "<span class='demo'>시험 모드: 이 기기에 키가 없어 가짜 구역을 보여 줍니다.</span> " +
-                       "<button id='bKey' type='button'>키 넣기</button>"
-                     : "<b>구역 " + n + "개 표시</b> · 지도를 누르면 그 지점의 구역을 알려 줍니다.";
-      if (M.kind === "leaflet" && !CFG.vworldKey) msg += "<br><span class='demo'>키가 없어 미리보기 지도(OSM)를 씁니다.</span>";
-      if (fails.length) msg += "<br><span class='bad'>못 받은 구역: " + fails.join(" / ") + "</span>";
+      var msg = demo ? "<span class='demo'>시험 모드입니다. 이 기기에 키가 없어 가짜 구역과 일반 지도를 보여 줍니다.</span>" +
+                       "<button id='bKey' class='key-btn' type='button'>키 넣기</button>"
+                     : "<b>공역 " + n + "곳</b>을 불러왔습니다. 지도를 누르면 비행 가능 여부가 나옵니다.";
+      if (fails.length) msg += "<br><span class='bad'>못 받은 구역: " + fails.join(", ") + ". 새로받기를 눌러 보세요.</span>";
       setStatus(msg);
       var bk = $("bKey");
       if (bk) bk.onclick = function () {
@@ -379,8 +380,8 @@
     return alts[0].agl && alts[0].ft * 0.3048 >= DRONE_MAX_M;
   }
 
-  // 구역 설명 한 줄: "R20 · 지면 ~ 해발 5,000ft(1,524m)"
-  function zoneText(props, L) {
+  // 구역 정보 나누기: code "R20", alt "지면 ~ 해발 5,000ft(1,524m)", note "원전 관련 임시 (금지)공역"
+  function zoneParts(props, L) {
     var code = "", note = "", alts = [];
     Object.keys(props).forEach(function (k) {
       var v = props[k]; if (typeof v !== "string") return;
@@ -388,17 +389,19 @@
       if (/_label$/.test(k)) { code = v; return; }                   // 이착륙장 이름(한글)
       if (/_lbl_1$/.test(k)) { if (!code) code = v.replace(/^RK\s+/, ""); return; }
       if (/_lbl_[23]$/.test(k)) { var a = parseAlt(v); if (a) alts.push(a); return; }
-      if (/_lbl_4$/.test(k) && L.name.indexOf(v) !== 0) note = v;     // "원전 관련 임시 (금지)공역" 등
+      if (/_lbl_4$/.test(k) && L.name.indexOf(v) !== 0) note = v;
     });
     if (code === "Airfield") code = "";
-    var parts = [];
-    if (code) parts.push(code);
+    var alt = "";
     if (alts.length === 2) {
       alts.sort(function (a, b) { return a.ft - b.ft; });
-      parts.push(alts[0].txt + " ~ " + alts[1].txt);
-    } else if (alts.length === 1) parts.push("~ " + alts[0].txt);
-    if (note) parts.push(note);
-    return parts.join(" · ");
+      alt = alts[0].txt + " ~ " + alts[1].txt;
+    } else if (alts.length === 1) alt = "~ " + alts[0].txt;
+    return { code: code, alt: alt, note: note };
+  }
+  function zoneText(props, L) {
+    var p = zoneParts(props, L);
+    return [p.code, p.alt, p.note].filter(Boolean).join(", ");
   }
   function describe(props, L) {
     var parts = [];
@@ -422,26 +425,36 @@
     return { cls: "ok", text: "비행 가능" };
   }
 
-  // 누른 곳 옆 작은 말풍선: 판정(맨 위) → 구역(이름·코드·고도) → 주소
+  // 누른 곳 말풍선: 판정 띠(색·아이콘) → 걸린 구역 → 주소
+  var ICON = {
+    ok: "<svg class='i' viewBox='0 0 24 24'><path d='M20 6 9 17l-5-5'/></svg>",
+    caution: "<svg class='i' viewBox='0 0 24 24'><path d='M12 3 2 20h20z'/><path d='M12 10v4M12 17.5v.01'/></svg>",
+    bad: "<svg class='i' viewBox='0 0 24 24'><circle cx='12' cy='12' r='9'/><path d='M5.6 5.6l12.8 12.8'/></svg>",
+    pin: "<svg class='i' viewBox='0 0 24 24'><path d='M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z'/><circle cx='12' cy='9.5' r='2.5'/></svg>",
+    clock: "<svg class='i' viewBox='0 0 24 24'><circle cx='12' cy='12' r='9'/><path d='M12 7v5l3 2'/></svg>"
+  };
   var popSeq = 0;
   function showInfo(title, lat, lon, h) {
     var v = verdict(h);
-    var html = "<div class='pp-v first " + v.cls + "'>" + v.text + "</div>";
+    var html = "<div class='pp-v " + v.cls + "'>" + ICON[v.cls] + v.text + "</div><div class='pp-body'>";
     h.forEach(function (x) {
-      var d = zoneText(x.z.props, x.L) || describe(x.z.props, x.L);
+      var p = zoneParts(x.z.props, x.L);
       var up = aboveDrone(x.z.props);
-      html += "<div class='pp-z" + (up ? " dim" : "") + "'><b><i style='border-color:" + x.L.color + ";background:" + x.L.color + "55'></i>" +
-        esc(x.L.name.replace(/ \(.*\)/, "")) + "</b>" + (d ? "<small>" + esc(d) + "</small>" : "") +
-        (up ? "<small>드론 고도(150m)보다 위 · 해당 없음</small>" : "") + "</div>";
+      var line = p.alt || (!p.code ? describe(x.z.props, x.L) : "");
+      if (p.note) line = line ? line + ", " + p.note : p.note;
+      html += "<div class='pp-z" + (up ? " dim" : "") + "'><i class='sw' style='border-color:" + x.L.color + ";background:" + x.L.color + "44'></i><div>" +
+        "<b>" + esc(x.L.name) + "</b>" + (p.code ? "<span class='code'>" + esc(p.code) + "</span>" : "") +
+        (line ? "<small>" + esc(line) + "</small>" : "") +
+        (up ? "<small>드론 고도(150m)보다 위라 해당 없음</small>" : "") + "</div></div>";
     });
     $("layers").classList.remove("open");
     var my = ++popSeq;
-    M.popup(lat, lon, html + "<div class='pp-a'><small>주소 확인 중…</small></div>");
+    M.popup(lat, lon, html + "<div class='pp-a wait'>주소 확인 중…</div></div>");
     getAddress(lat, lon).then(function (a) {
       if (my !== popSeq) return;   // 그 사이 다른 곳을 눌렀으면 버림
       var ah = a.parcel || a.road ? "<div class='pp-a'>" + esc(a.parcel || a.road) +
         (a.parcel && a.road ? "<small>" + esc(a.road) + "</small>" : "") + "</div>" : "";
-      M.popupUpdate(html + ah);
+      M.popupUpdate(html + ah + "</div>");
     });
   }
 
@@ -471,20 +484,24 @@
     var h = hits(lat, lon);
     var v = verdict(h);
     if (!quiet) showInfo("", lat, lon, h);
-    setStatus("<b class='" + v.cls + "'>내 위치: " + (h.length ? h.map(function (x) { return x.L.name.replace(/ \(.*\)/, ""); }).join(", ") : "표시된 구역 밖") +
-      "</b><br><span style='color:var(--muted)'>정확도 약 " + Math.round(me.acc) + "m</span>");
+    setStatus("<b class='" + v.cls + "'>내 위치 " + v.text + "</b>" +
+      (h.length ? ", " + h.map(function (x) { return x.L.name; }).join(", ") : "") +
+      " <span style='color:var(--ink-3)'>(정확도 약 " + Math.round(me.acc) + "m)</span>");
   }
 
   function setStatus(html) { $("status").innerHTML = html; }
 
   // ---------- 버튼 ----------
   function buildLayerPanel() {
-    var el = $("layers"); el.innerHTML = "";
+    var el = $("layers"); el.innerHTML = "<h3>지도에 표시할 구역</h3>";
     LAYERS.forEach(function (L) {
       var lab = document.createElement("label");
       var cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = L.on;
-      var sw = document.createElement("span"); sw.className = "sw"; sw.style.borderColor = L.color; sw.style.background = L.color + "55";
-      lab.appendChild(cb); lab.appendChild(sw); lab.appendChild(document.createTextNode(L.name));
+      cb.setAttribute("aria-label", L.name);
+      var sw = document.createElement("span"); sw.className = "sw"; sw.style.borderColor = L.color; sw.style.background = L.color + "44";
+      var t = document.createElement("span"); t.className = "t";
+      t.innerHTML = esc(L.name) + (L.desc ? "<small>" + esc(L.desc) + "</small>" : "");
+      lab.appendChild(sw); lab.appendChild(t); lab.appendChild(cb);
       cb.onchange = function () {
         L.on = cb.checked; (shapes[L.id] || []).forEach(function (s) { s.show(L.on); });
         var o = {}; LAYERS.forEach(function (x) { o[x.id] = x.on; }); store.set("dz_layers_on", o);
@@ -492,13 +509,16 @@
       };
       el.appendChild(lab);
     });
+    var note = document.createElement("p");
+    note.textContent = "꺼 둔 구역도 지도를 눌렀을 때 판정에는 들어갑니다.";
+    el.appendChild(note);
   }
 
   function goPlace(r) {
     hideSuggest();
     saveHist(r);
     sugList = [];   // 다음에 검색창을 누르면 최근 검색이 뜨도록
-    $("q").value = r.name; $("q").blur();
+    $("q").value = r.name; $("q").blur(); $("qClear").classList.add("show");
     M.pin(r.lat, r.lon, true);
     lastInspect = 0;
     showInfo(r.name, r.lat, r.lon, hits(r.lat, r.lon));
@@ -514,7 +534,8 @@
   }
   function itemButton(r, recent) {
     var b = document.createElement("button"); b.type = "button"; b.className = "s-item" + (recent ? " recent" : "");
-    b.innerHTML = "<b>" + esc(r.name) + "</b><small>" + esc(r.sub) + "</small>";
+    b.innerHTML = (recent ? ICON.clock : ICON.pin) + "<span><b>" + esc(r.name) + "</b>" +
+      (r.sub ? "<small>" + esc(r.sub) + "</small>" : "") + "</span>";
     b.addEventListener("click", function () { goPlace(r); });
     return b;
   }
@@ -581,7 +602,14 @@
     buildLayerPanel();
     M.onClick(inspect);
     $("search").onsubmit = doSearch;
-    $("q").addEventListener("input", function () { sugList = []; runSuggest(false); });
+    $("q").addEventListener("input", function () {
+      $("qClear").classList.toggle("show", !!$("q").value); sugList = []; runSuggest(false);
+    });
+    $("qClear").addEventListener("click", function () {
+      $("q").value = ""; $("qClear").classList.remove("show"); sugList = []; $("q").focus(); renderHistory(false);
+    });
+    $("bZin").onclick = function () { M.zoomBy(1); };
+    $("bZout").onclick = function () { M.zoomBy(-1); };
     // 검색창을 누르면: 막 친 글자의 결과가 있으면 그것, 아니면 최근 검색
     $("q").addEventListener("focus", function () {
       if (sugList.length) renderSuggest($("q").value.trim(), sugList, false); else renderHistory(false);
@@ -599,8 +627,11 @@
     // 오른쪽 아이콘 줄은 검색창 바로 아래에. 드롭다운이 열려도 아이콘은 제자리(드롭다운이 위로 덮음).
     function placeButtons() {
       var top = $("top"), sug = $("suggest");
-      var h = top.offsetTop + top.offsetHeight - (sug.classList.contains("open") ? sug.offsetHeight + 6 : 0);
-      document.documentElement.style.setProperty("--btns-top", (h + 8) + "px");
+      // 화면이 넓어 검색창 옆에 자리가 있으면 맨 위에, 아니면 검색창 아래에
+      var roomBeside = window.innerWidth - (top.offsetLeft + top.offsetWidth) > 76;
+      var y = roomBeside ? top.offsetTop
+        : top.offsetTop + top.offsetHeight - (sug.classList.contains("open") ? sug.offsetHeight + 6 : 0) + 8;
+      document.documentElement.style.setProperty("--btns-top", y + "px");
     }
     placeButtons();
     window.addEventListener("resize", placeButtons);
