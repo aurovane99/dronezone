@@ -326,7 +326,41 @@
 
   function clean(v) { return String(v).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim(); }
   function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
-  var ALT = { GND: "지면", UNL: "무제한", SFC: "지면" };
+  // 고도 글자 해석: "5 000 AMSL" → 해발 5,000ft(1,524m), "500FT HEI"/"1 000 AGL" → 지상 …, FL180, GND/SFC, UNL
+  function parseAlt(s) {
+    var t = String(s).toUpperCase().replace(/\s+/g, " ").trim();
+    if (/^(GND|SFC)$/.test(t)) return { ft: 0, txt: "지면" };
+    if (t === "UNL") return { ft: 1e9, txt: "무제한" };
+    var fl = /^FL\s?(\d+)$/.exec(t);
+    if (fl) { var f = +fl[1] * 100; return { ft: f, txt: "FL" + fl[1] + "(약 " + Math.round(f * 0.3048).toLocaleString() + "m)" }; }
+    var m = /^([\d ,]+)\s*(FT)?\s*(AMSL|MSL|AGL|HEI)?$/.exec(t);
+    if (!m) return null;
+    var ft = +m[1].replace(/[ ,]/g, ""); if (!isFinite(ft)) return null;
+    var ref = m[3] === "AGL" || m[3] === "HEI" ? "지상 " : (m[3] ? "해발 " : "");
+    return { ft: ft, txt: ref + ft.toLocaleString() + "ft(" + Math.round(ft * 0.3048).toLocaleString() + "m)" };
+  }
+
+  // 구역 설명 한 줄: "R20 · 지면 ~ 해발 5,000ft(1,524m)"
+  function zoneText(props, L) {
+    var code = "", note = "", alts = [];
+    Object.keys(props).forEach(function (k) {
+      var v = props[k]; if (typeof v !== "string") return;
+      v = clean(v); if (!v) return;
+      if (/_label$/.test(k)) { code = v; return; }                   // 이착륙장 이름(한글)
+      if (/_lbl_1$/.test(k)) { if (!code) code = v.replace(/^RK\s+/, ""); return; }
+      if (/_lbl_[23]$/.test(k)) { var a = parseAlt(v); if (a) alts.push(a); return; }
+      if (/_lbl_4$/.test(k) && L.name.indexOf(v) !== 0) note = v;     // "원전 관련 임시 (금지)공역" 등
+    });
+    if (code === "Airfield") code = "";
+    var parts = [];
+    if (code) parts.push(code);
+    if (alts.length === 2) {
+      alts.sort(function (a, b) { return a.ft - b.ft; });
+      parts.push(alts[0].txt + " ~ " + alts[1].txt);
+    } else if (alts.length === 1) parts.push("~ " + alts[0].txt);
+    if (note) parts.push(note);
+    return parts.join(" · ");
+  }
   function describe(props, L) {
     var parts = [];
     Object.keys(props).forEach(function (k) {
@@ -336,7 +370,6 @@
       if (/^\d{1,2}$/.test(v)) return;                 // 구분용 숫자(타입 코드)
       if (L && L.name.indexOf(v) === 0) return;         // 구역 이름과 같은 글
       v = v.replace(/^RK\s+/, "");                       // 국가 접두어
-      if (ALT[v]) v = "고도 " + ALT[v];
       if (parts.indexOf(v) < 0) parts.push(v);
     });
     return parts.join(" · ");
@@ -354,7 +387,7 @@
   function showInfo(title, lat, lon, h) {
     var html = "";
     h.forEach(function (x) {
-      var d = describe(x.z.props, x.L);
+      var d = zoneText(x.z.props, x.L) || describe(x.z.props, x.L);
       html += "<div class='pp-z'><b><i style='border-color:" + x.L.color + ";background:" + x.L.color + "55'></i>" +
         esc(x.L.name.replace(/ \(.*\)/, "")) + "</b>" + (d ? "<small>" + esc(d) + "</small>" : "") + "</div>";
     });
