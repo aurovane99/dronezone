@@ -1,5 +1,5 @@
-// 드론 비행구역 지도 — 다음(카카오)지도 + 브이월드 공역 데이터
-// 카카오 키가 없으면 미리보기용 OSM 지도(Leaflet)로, 브이월드 키가 없으면 시험용 가짜 구역으로 동작한다.
+// 드론 비행구역 지도 — 브이월드 지도·공역 데이터 (Leaflet)
+// 검색: 카카오 키가 있으면 카카오, 없으면 브이월드. 브이월드 키가 없으면 OSM 지도 + 시험용 가짜 구역.
 (function () {
   "use strict";
   var CFG = window.DZ_CONFIG || {};
@@ -39,60 +39,6 @@
   var watchId = null;
 
   // ---------- 지도 어댑터 ----------
-  function kakaoAdapter() {
-    var k = window.kakao.maps;
-    var map = new k.Map($("map"), { center: new k.LatLng(37.738, 127.034), level: 8 });
-    map.addControl(new k.ZoomControl(), k.ControlPosition.RIGHT);
-    var meDot = null, meCircle = null, sat = false;
-    return {
-      kind: "kakao",
-      polygon: function (rings, L, onClick) {
-        var path = rings.map(function (r) { return r.map(function (p) { return new k.LatLng(p[0], p[1]); }); });
-        var pg = new k.Polygon({ path: path, strokeWeight: 2, strokeColor: L.color, strokeOpacity: 0.9,
-          fillColor: L.color, fillOpacity: L.fill });
-        k.event.addListener(pg, "click", function (e) { onClick(e.latLng.getLat(), e.latLng.getLng()); });
-        return { show: function (v) { pg.setMap(v ? map : null); } };
-      },
-      onClick: function (fn) { k.event.addListener(map, "click", function (e) { fn(e.latLng.getLat(), e.latLng.getLng()); }); },
-      setMe: function (lat, lon, acc, pan) {
-        var ll = new k.LatLng(lat, lon);
-        if (!meDot) {
-          var el = document.createElement("div"); el.className = "me";
-          meDot = new k.CustomOverlay({ position: ll, content: el, zIndex: 10 }); meDot.setMap(map);
-          meCircle = new k.Circle({ center: ll, radius: acc, strokeWeight: 1, strokeColor: "#2563eb",
-            strokeOpacity: 0.6, fillColor: "#2563eb", fillOpacity: 0.12 }); meCircle.setMap(map);
-        }
-        meDot.setPosition(ll); meCircle.setPosition(ll); meCircle.setRadius(acc);
-        if (pan) { map.setLevel(6); map.panTo(ll); }
-      },
-      toggleSat: function () {
-        sat = !sat; map.setMapTypeId(sat ? k.MapTypeId.HYBRID : k.MapTypeId.ROADMAP); return sat;
-      },
-      pin: function (lat, lon) {
-        var ll = new k.LatLng(lat, lon);
-        if (!pinM) { pinM = new k.Marker({ position: ll }); pinM.setMap(map); }
-        pinM.setPosition(ll); map.setLevel(5); map.panTo(ll);
-      },
-      search: function (q) {
-        // 주소 먼저, 없으면 장소 이름
-        var svc = k.services;
-        return new Promise(function (resolve) {
-          new svc.Geocoder().addressSearch(q, function (d, st) {
-            if (st === svc.Status.OK && d.length) return resolve(d.map(function (x) {
-              return { name: x.address_name, sub: (x.road_address && x.road_address.address_name) || "", lat: +x.y, lon: +x.x };
-            }));
-            new svc.Places().keywordSearch(q, function (d2, st2) {
-              resolve(st2 === svc.Status.OK ? d2.map(function (x) {
-                return { name: x.place_name, sub: x.road_address_name || x.address_name, lat: +x.y, lon: +x.x };
-              }) : []);
-            });
-          });
-        });
-      }
-    };
-  }
-  var pinM = null;
-
   function leafletAdapter() {
     var map = window.L.map("map", { zoomControl: false, minZoom: 6, maxZoom: 19 }).setView([37.738, 127.034], 11);
     var road, satL;
@@ -136,16 +82,14 @@
         if (sat) { map.removeLayer(road); satL.addTo(map); } else { map.removeLayer(satL); road.addTo(map); }
         return sat;
       },
-      pin: function (lat, lon) {
-        if (!pinL) pinL = window.L.circleMarker([lat, lon], { radius: 9, weight: 3, color: "#fff", fillColor: "#dc2626", fillOpacity: 1 }).addTo(map);
-        pinL.setLatLng([lat, lon]); map.setView([lat, lon], 15);
-      },
-      search: function (q) {
-        if (CFG.vworldKey) return vworldSearch(q);
-        // 키 없을 때 미리보기용: OSM 검색
-        return fetch("https://nominatim.openstreetmap.org/search?format=json&countrycodes=kr&limit=8&accept-language=ko&q=" + encodeURIComponent(q))
-          .then(function (r) { return r.json(); })
-          .then(function (d) { return d.map(function (x) { return { name: x.display_name.split(",")[0], sub: x.display_name, lat: +x.lat, lon: +x.lon }; }); });
+      // 핀: 검색이면 그 자리로 이동(zoom), 지도 누름이면 화면은 그대로
+      pin: function (lat, lon, zoom) {
+        if (!pinL) {
+          var icon = window.L.divIcon({ className: "", html: "<div class='pin'></div>", iconSize: [26, 34], iconAnchor: [13, 34] });
+          pinL = window.L.marker([lat, lon], { icon: icon, interactive: false, keyboard: false }).addTo(map);
+        }
+        pinL.setLatLng([lat, lon]);
+        if (zoom) map.setView([lat, lon], Math.max(map.getZoom(), 16));
       }
     };
     var pinL = null;
@@ -158,15 +102,60 @@
   }
 
   function startMap() {
+    var css = document.createElement("link"); css.rel = "stylesheet";
+    css.href = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"; document.head.appendChild(css);
+    loadScript("https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js", function () { M = leafletAdapter(); afterMap(); });
+    // 검색용 카카오 (키가 있을 때만). 지도는 브이월드 그대로.
     if (CFG.kakaoKey) {
       loadScript("https://dapi.kakao.com/v2/maps/sdk.js?autoload=false&libraries=services&appkey=" + encodeURIComponent(CFG.kakaoKey), function () {
-        window.kakao.maps.load(function () { M = kakaoAdapter(); afterMap(); });
-      }, function () { setStatus("<span class='bad'>카카오 지도를 불러오지 못했습니다.</span> 키와 등록한 사이트 주소를 확인하세요."); });
-    } else {
-      var css = document.createElement("link"); css.rel = "stylesheet";
-      css.href = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"; document.head.appendChild(css);
-      loadScript("https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js", function () { M = leafletAdapter(); afterMap(); });
+        window.kakao.maps.load(function () { kakaoReady = true; });
+      }, function () { /* 실패하면 브이월드 검색으로 */ });
     }
+  }
+  var kakaoReady = false;
+
+  // ---------- 검색 ----------
+  function search(q) {
+    if (kakaoReady) return kakaoSearch(q);
+    if (CFG.vworldKey) return vworldSmartSearch(q);
+    return fetch("https://nominatim.openstreetmap.org/search?format=json&countrycodes=kr&limit=8&accept-language=ko&q=" + encodeURIComponent(q))
+      .then(function (r) { return r.json(); })
+      .then(function (d) { return d.map(function (x) { return { name: x.display_name.split(",")[0], sub: x.display_name, lat: +x.lat, lon: +x.lon }; }); });
+  }
+
+  // 카카오: 주소 + 장소 이름(아파트·상호)
+  function kakaoSearch(q) {
+    var svc = window.kakao.maps.services;
+    var places = new Promise(function (res) {
+      new svc.Places().keywordSearch(q, function (d, st) {
+        res(st === svc.Status.OK ? d.map(function (x) {
+          return { name: x.place_name, sub: x.road_address_name || x.address_name, lat: +x.y, lon: +x.x };
+        }) : []);
+      }, { size: 15 });
+    });
+    var addrs = new Promise(function (res) {
+      new svc.Geocoder().addressSearch(q, function (d, st) {
+        res(st === svc.Status.OK ? d.map(function (x) {
+          return { name: x.address_name, sub: (x.road_address && x.road_address.address_name) || "", lat: +x.y, lon: +x.x };
+        }) : []);
+      });
+    });
+    return Promise.all([addrs, places]).then(function (r) { return r[0].concat(r[1]); });
+  }
+
+  // 브이월드: "의정부 루엘리안"처럼 지역+이름이면, 이름만으로 다시 찾아 지역 맞는 것을 앞으로
+  function vworldSmartSearch(q) {
+    return vworldSearch(q).then(function (list) {
+      var words = q.split(/\s+/).filter(Boolean);
+      if (list.length >= 3 || words.length < 2) return list;
+      var name = words[words.length - 1], region = words.slice(0, -1);
+      return vworldSearch(name).then(function (more) {
+        var hit = function (r) { return region.every(function (w) { return (r.name + " " + r.sub).indexOf(w) >= 0; }); };
+        var seen = {}; list.forEach(function (r) { seen[r.name + "|" + r.sub] = 1; });
+        more = more.filter(function (r) { return !seen[r.name + "|" + r.sub]; });
+        return list.concat(more.filter(hit), more.filter(function (r) { return !hit(r); }));
+      });
+    });
   }
 
   // ---------- 브이월드 데이터 ----------
@@ -375,6 +364,8 @@
   function inspect(lat, lon) {
     if (Date.now() - lastInspect < 250) return; // 도형+지도 클릭이 같이 올 때 한 번만
     lastInspect = Date.now();
+    hideSuggest();
+    M.pin(lat, lon, false);
     showInfo("누른 지점", lat, lon, hits(lat, lon).filter(function (x) { return x.L.on; }));
   }
 
@@ -406,37 +397,59 @@
   }
 
   function goPlace(r) {
-    M.pin(r.lat, r.lon);
+    hideSuggest();
+    $("q").value = r.name; $("q").blur();
+    M.pin(r.lat, r.lon, true);
     lastInspect = 0;
     showInfo(r.name, r.lat, r.lon, hits(r.lat, r.lon).filter(function (x) { return x.L.on; }));
   }
 
+  // ---------- 검색창 드롭다운 ----------
+  var sugSeq = 0, sugTimer = null, sugList = [];
+  function hideSuggest() { $("suggest").classList.remove("open"); }
+  function renderSuggest(q, list, busy) {
+    var el = $("suggest"); el.innerHTML = "";
+    if (busy) el.innerHTML = "<div class='s-msg'>찾는 중…</div>";
+    else if (!list.length) el.innerHTML = "<div class='s-msg'>'" + esc(q) + "' 결과가 없습니다</div>";
+    list.slice(0, 12).forEach(function (r) {
+      var b = document.createElement("button"); b.type = "button"; b.className = "s-item";
+      b.innerHTML = "<b>" + esc(r.name) + "</b><small>" + esc(r.sub) + "</small>";
+      // 휴대폰에서 키보드가 닫히며 목록이 먼저 사라지지 않게 mousedown/touchstart에서 처리
+      b.addEventListener("mousedown", function (e) { e.preventDefault(); goPlace(r); });
+      b.addEventListener("touchstart", function (e) { e.preventDefault(); goPlace(r); }, { passive: false });
+      el.appendChild(b);
+    });
+    el.classList.add("open");
+    $("info").classList.remove("open"); $("layers").classList.remove("open");
+  }
+  function runSuggest(now) {
+    var q = $("q").value.trim();
+    clearTimeout(sugTimer);
+    if (q.length < 2) { sugList = []; hideSuggest(); return; }
+    sugTimer = setTimeout(function () {
+      var my = ++sugSeq;
+      renderSuggest(q, sugList, !sugList.length);
+      search(q).then(function (list) {
+        if (my !== sugSeq) return;            // 그 사이 더 친 글자가 있으면 버림
+        sugList = list; renderSuggest(q, list, false);
+      }, function () { if (my === sugSeq) renderSuggest(q, [], false); });
+    }, now ? 0 : 350);
+  }
+
   function doSearch(ev) {
     ev.preventDefault();
-    var q = $("q").value.trim(); if (!q) return;
-    $("q").blur();
-    setStatus("찾는 중…");
-    M.search(q).then(function (list) {
-      setStatus("<b>'" + esc(q) + "'</b> 검색 결과 " + list.length + "건");
-      if (!list.length) { $("info").classList.remove("open"); return; }
-      if (list.length === 1) return goPlace(list[0]);
-      var el = $("info");
-      el.innerHTML = "<button class='x' aria-label='닫기'>×</button><h4>검색 결과</h4>";
-      list.slice(0, 10).forEach(function (r) {
-        var b = document.createElement("button"); b.className = "r";
-        b.innerHTML = "<b>" + esc(r.name) + "</b><br><small>" + esc(r.sub) + "</small>";
-        b.onclick = function () { goPlace(r); };
-        el.appendChild(b);
-      });
-      el.classList.add("open"); $("layers").classList.remove("open");
-      el.querySelector(".x").onclick = function () { el.classList.remove("open"); };
-    }, function (e) { setStatus("<span class='bad'>검색 실패: " + esc(e.message) + "</span>"); });
+    // 엔터: 목록이 이미 있으면 맨 위 항목으로, 없으면 바로 검색
+    if (sugList.length && $("suggest").classList.contains("open")) return goPlace(sugList[0]);
+    runSuggest(true);
   }
 
   function afterMap() {
     buildLayerPanel();
     M.onClick(inspect);
     $("search").onsubmit = doSearch;
+    $("q").addEventListener("input", function () { sugList = []; runSuggest(false); });
+    $("q").addEventListener("focus", function () { if (sugList.length) renderSuggest($("q").value.trim(), sugList, false); });
+    $("q").addEventListener("blur", function () { setTimeout(hideSuggest, 150); });
     $("bLayers").onclick = function () { $("info").classList.remove("open"); $("layers").classList.toggle("open"); };
     $("bSat").onclick = function () { $("bSat").classList.toggle("on", M.toggleSat()); };
     $("bReload").onclick = function () { loadAll(true); };

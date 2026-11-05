@@ -24,6 +24,19 @@
     background:var(--bg); color:var(--fg); font-family:inherit; }
   #search button { font-size:15px; padding:0 14px; border:0; border-radius:8px; background:var(--accent); color:#fff; font-family:inherit; }
   #status { min-width:0; line-height:1.35; }
+  #suggest { display:none; margin:0 0 6px; max-height:50vh; overflow:auto; border:1px solid var(--line);
+    border-radius:8px; background:var(--bg); }
+  #suggest.open { display:block; }
+  .s-item { display:block; width:100%; text-align:left; padding:9px 10px; border:0; border-top:1px solid var(--line);
+    background:none; color:var(--fg); font:inherit; cursor:pointer; }
+  .s-item:first-child { border-top:0; }
+  .s-item:hover, .s-item:active { background:#2563eb22; }
+  .s-item b { display:block; font-size:14px; }
+  .s-item small { display:block; color:var(--muted); font-size:12px; margin-top:2px; }
+  .s-msg { padding:9px 10px; color:var(--muted); }
+  .pin { position:relative; width:26px; height:26px; background:#dc2626; border:3px solid #fff; border-radius:50% 50% 50% 0;
+    transform:rotate(-45deg); box-shadow:0 2px 6px #0006; }
+  .pin::after { content:""; position:absolute; left:7px; top:7px; width:6px; height:6px; border-radius:50%; background:#fff; }
   #info .r { display:block; width:100%; text-align:left; padding:8px 4px; border:0; border-top:1px solid var(--line);
     background:none; color:var(--fg); font:inherit; }
   #info .r small { color:var(--muted); }
@@ -51,6 +64,7 @@
 <div id="map"></div>
 <div id="top" class="panel">
   <form id="search"><input id="q" type="search" placeholder="주소·장소 찾기 (예: 의정부시청)" enterkeyhint="search" autocomplete="off"><button type="submit">찾기</button></form>
+  <div id="suggest"></div>
   <div id="status">불러오는 중…</div>
 </div>
 <div id="info" class="panel"></div>
@@ -62,7 +76,7 @@
   <button id="bReload">↻ 새로받기</button>
 </div>
 <!-- 파일을 고치면 v= 숫자를 올려야 휴대폰이 옛 파일을 안 씀 -->
-<script src="config.js?v=4"></script>
-<script src="app.js?v=4"></script>
+<script src="config.js?v=6"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>
