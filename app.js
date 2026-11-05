@@ -123,9 +123,84 @@
           autoPanPaddingTopLeft: [10, 120], autoPanPaddingBottomRight: [70, 30] });
         pop.setLatLng([lat, lon]).setContent(html).openOn(map);
       },
-      popupUpdate: function (html) { if (pop && pop.isOpen()) pop.setContent(html); }
+      popupUpdate: function (html) { if (pop && pop.isOpen()) pop.setContent(html); },
+      // 공원 경계: 누름을 막지 않는 점선 (판정은 따로 함)
+      parkLayer: function (rings, color) {
+        var pg = window.L.polygon(rings, { interactive: false, weight: 2, color: color, opacity: 0.95, dashArray: "6 5",
+          fillColor: color, fillOpacity: 0.07, smoothFactor: 1.5 });
+        return { show: function (v) { if (v) pg.addTo(map); else pg.remove(); } };
+      },
+      view: function () { var b = map.getBounds(); return { z: map.getZoom(), w: b.getWest(), s: b.getSouth(), e: b.getEast(), n: b.getNorth() }; },
+      onMoveEnd: function (fn) { map.on("moveend", fn); }
     };
     var pinL = null, pop = null;
+  }
+
+  // ---------- 국립·도립·군립공원 (자연공원법: 관리사무소 허가 필요) ----------
+  var PARKS = [
+    { id: "LT_C_WGISNPGUG", name: "국립공원", color: "#1E7A3C" },
+    { id: "LT_C_WGISNPDO", name: "도립공원", color: "#4D8B2A" },
+    { id: "LT_C_WGISNPGUN", name: "군립공원", color: "#6C9A23" }
+  ];
+  var PARK_MIN_ZOOM = 10;               // 이보다 멀리서 보면 경계를 받지 않음(데이터가 큼)
+  var parksOn = store.get("dz_parks_on"); if (parksOn === null) parksOn = true;
+  var parkDrawn = {};                    // 이미 그린 공원 (중복 방지)
+  var parkShapes = [];
+  var parkPointCache = {};
+
+  function vwData(id, geomFilter, extra) {
+    var url = "https://api.vworld.kr/req/data?service=data&version=2.0&request=GetFeature&format=json&errorFormat=json" +
+      "&size=100&page=1&data=" + id + "&geomFilter=" + encodeURIComponent(geomFilter) + "&crs=EPSG:4326" + (extra || "") +
+      "&key=" + encodeURIComponent(CFG.vworldKey) + "&domain=" + encodeURIComponent(CFG.vworldDomain || location.origin);
+    return jsonp(url, 20000).then(function (d) {
+      var r = d && d.response;
+      if (!r || r.status === "NOT_FOUND") return [];
+      if (r.status !== "OK") throw new Error((r.error || {}).code || r.status);
+      return ((r.result || {}).featureCollection || {}).features || [];
+    });
+  }
+
+  // 한 점이 어느 공원 안인지 (응답이 작아 빠름). 결과는 [{P, name}]
+  function parksAt(lat, lon) {
+    if (!CFG.vworldKey) return Promise.resolve([]);
+    var k = lat.toFixed(4) + "," + lon.toFixed(4);
+    if (parkPointCache[k]) return Promise.resolve(parkPointCache[k]);
+    var pt = "POINT(" + lon.toFixed(6) + " " + lat.toFixed(6) + ")";
+    var failed = false;
+    return Promise.all(PARKS.map(function (P) {
+      return vwData(P.id, pt, "&geometry=false").then(function (fs) {
+        return fs.map(function (f) { return { P: P, name: (f.properties || {}).park_name || "" }; });
+      }, function () { failed = true; return []; });
+    })).then(function (rs) {
+      var out = [].concat.apply([], rs);
+      if (!failed) parkPointCache[k] = out;   // 실패한 결과는 기억하지 않음
+      return out;
+    });
+  }
+
+  // 지금 보이는 범위의 공원 경계 그리기
+  var parkTimer = null;
+  function refreshParks() {
+    clearTimeout(parkTimer);
+    parkTimer = setTimeout(function () {
+      if (!CFG.vworldKey || !parksOn || !M) return;
+      var v = M.view();
+      if (v.z < PARK_MIN_ZOOM) return;
+      var box = "BOX(" + [v.w, v.s, v.e, v.n].map(function (x) { return x.toFixed(5); }).join(",") + ")";
+      PARKS.forEach(function (P) {
+        vwData(P.id, box).then(function (fs) {
+          fs.forEach(function (f) {
+            var g = f.geometry; if (!g) return;
+            var key = P.id + "|" + ((f.properties || {}).park_name || "") + "|" + JSON.stringify(g.coordinates).slice(0, 60);
+            if (parkDrawn[key]) return;
+            parkDrawn[key] = 1;
+            toPolys([f]).forEach(function (z) {
+              var s = M.parkLayer(z.rings, P.color); s.show(parksOn); parkShapes.push(s);
+            });
+          });
+        }, function () { /* 실패해도 판정은 점 조회로 따로 함 */ });
+      });
+    }, 400);
   }
 
   function loadScript(src, ok, fail) {
@@ -435,8 +510,34 @@
   };
   var popSeq = 0;
   function showInfo(title, lat, lon, h) {
-    var v = verdict(h);
-    var html = "<div class='pp-v " + v.cls + "'>" + ICON[v.cls] + v.text + "</div><div class='pp-body'>";
+    var my = ++popSeq;
+    $("layers").classList.remove("open");
+    var zonesHtml = zoneRows(h);
+    if (!CFG.vworldKey) {   // 시험 모드: 공원·주소 조회 없음
+      var v0 = verdict(h);
+      M.popup(lat, lon, band(v0) + "<div class='pp-body'>" + zonesHtml + "</div>");
+      return;
+    }
+    // 공원 여부를 확인한 뒤에 판정을 보여 줌(먼저 '가능'이 떴다가 바뀌지 않게)
+    M.popup(lat, lon, "<div class='pp-v wait'>" + ICON.clock + "확인 중…</div><div class='pp-body'>" + zonesHtml + "</div>");
+    Promise.all([parksAt(lat, lon), getAddress(lat, lon)]).then(function (r) {
+      if (my !== popSeq) return;   // 그 사이 다른 곳을 눌렀으면 버림
+      var parks = r[0], a = r[1];
+      var v = verdict(h);
+      if (parks.length && v.cls !== "bad") v = { cls: "bad", text: "공원 허가 필요" };
+      var ph = parks.map(function (p) {
+        return "<div class='pp-z'><i class='sw park' style='border-color:" + p.P.color + "'></i><div><b>" + esc(p.P.name) + "</b>" +
+          (p.name ? "<span class='code'>" + esc(p.name) + "</span>" : "") +
+          "<small>관리사무소 허가 필요, 개인 촬영은 보통 불가</small></div></div>";
+      }).join("");
+      var ah = a.parcel || a.road ? "<div class='pp-a'>" + esc(a.parcel || a.road) +
+        (a.parcel && a.road ? "<small>" + esc(a.road) + "</small>" : "") + "</div>" : "";
+      M.popupUpdate(band(v) + "<div class='pp-body'>" + zonesHtml + ph + ah + "</div>");
+    });
+  }
+  function band(v) { return "<div class='pp-v " + v.cls + "'>" + ICON[v.cls] + v.text + "</div>"; }
+  function zoneRows(h) {
+    var html = "";
     h.forEach(function (x) {
       var p = zoneParts(x.z.props, x.L);
       var up = aboveDrone(x.z.props);
@@ -447,15 +548,7 @@
         (line ? "<small>" + esc(line) + "</small>" : "") +
         (up ? "<small>드론 고도(150m)보다 위라 해당 없음</small>" : "") + "</div></div>";
     });
-    $("layers").classList.remove("open");
-    var my = ++popSeq;
-    M.popup(lat, lon, html + "<div class='pp-a wait'>주소 확인 중…</div></div>");
-    getAddress(lat, lon).then(function (a) {
-      if (my !== popSeq) return;   // 그 사이 다른 곳을 눌렀으면 버림
-      var ah = a.parcel || a.road ? "<div class='pp-a'>" + esc(a.parcel || a.road) +
-        (a.parcel && a.road ? "<small>" + esc(a.road) + "</small>" : "") + "</div>" : "";
-      M.popupUpdate(html + ah + "</div>");
-    });
+    return html;
   }
 
   // 좌표 → 주소 (브이월드 지오코더). 실패하면 빈 값.
@@ -484,9 +577,17 @@
     var h = hits(lat, lon);
     var v = verdict(h);
     if (!quiet) showInfo("", lat, lon, h);
-    setStatus("<b class='" + v.cls + "'>내 위치 " + v.text + "</b>" +
-      (h.length ? ", " + h.map(function (x) { return x.L.name; }).join(", ") : "") +
-      " <span style='color:var(--ink-3)'>(정확도 약 " + Math.round(me.acc) + "m)</span>");
+    var names = h.map(function (x) { return x.L.name; });
+    function show(vv, nn) {
+      setStatus("<b class='" + vv.cls + "'>내 위치 " + vv.text + "</b>" + (nn.length ? ", " + nn.join(", ") : "") +
+        " <span style='color:var(--ink-3)'>(정확도 약 " + Math.round(me.acc) + "m)</span>");
+    }
+    show(v, names);
+    parksAt(lat, lon).then(function (parks) {
+      if (!parks.length) return;
+      var vv = v.cls === "bad" ? v : { cls: "bad", text: "공원 허가 필요" };
+      show(vv, names.concat(parks.map(function (p) { return p.name ? p.name + " " + p.P.name : p.P.name; })));
+    });
   }
 
   function setStatus(html) { $("status").innerHTML = html; }
@@ -509,6 +610,19 @@
       };
       el.appendChild(lab);
     });
+    // 공원 경계 (국립·도립·군립 한 번에)
+    var lab = document.createElement("label");
+    var cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = parksOn; cb.setAttribute("aria-label", "자연공원");
+    var sw = document.createElement("span"); sw.className = "sw park"; sw.style.borderColor = PARKS[0].color;
+    var t = document.createElement("span"); t.className = "t";
+    t.innerHTML = "국립·도립·군립공원<small>관리사무소 허가 필요. 확대하면 경계가 보입니다</small>";
+    lab.appendChild(sw); lab.appendChild(t); lab.appendChild(cb);
+    cb.onchange = function () {
+      parksOn = cb.checked; store.set("dz_parks_on", parksOn);
+      parkShapes.forEach(function (s) { s.show(parksOn); });
+      if (parksOn) refreshParks();
+    };
+    el.appendChild(lab);
     var note = document.createElement("p");
     note.textContent = "꺼 둔 구역도 지도를 눌렀을 때 판정에는 들어갑니다.";
     el.appendChild(note);
@@ -651,6 +765,8 @@
       }, { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 });
     };
     loadAll(false);
+    M.onMoveEnd(refreshParks);
+    refreshParks();
   }
 
   startMap();
