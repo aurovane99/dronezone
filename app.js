@@ -359,6 +359,10 @@
         esc(x.L.name.replace(/ \(.*\)/, "")) + "</b>" + (d ? "<small>" + esc(d) + "</small>" : "") + "</div>";
     });
     if (!html) html = "<div class='pp-z'><b>표시된 구역 없음</b></div>";
+    // 맨 아래 한 줄 판정
+    var v = verdict(h);
+    var txt = v.cls === "ok" ? "비행 가능" : (h.length ? "비행승인 필요" : "비행 가능 (고도 150m 미만)");
+    html += "<div class='pp-v " + (txt.indexOf("가능") >= 0 ? "ok" : "bad") + "'>" + txt + "</div>";
     $("layers").classList.remove("open");
     M.popup(lat, lon, html);
   }
