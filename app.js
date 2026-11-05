@@ -471,10 +471,50 @@
 
   function goPlace(r) {
     hideSuggest();
+    saveHist(r);
+    sugList = [];   // 다음에 검색창을 누르면 최근 검색이 뜨도록
     $("q").value = r.name; $("q").blur();
     M.pin(r.lat, r.lon, true);
     lastInspect = 0;
     showInfo(r.name, r.lat, r.lon, hits(r.lat, r.lon));
+  }
+
+  // ---------- 최근 검색 기록 (이 기기에만 저장) ----------
+  var HKEY = "dz_history", HKEEP = 50, HSHOW = 10;
+  function loadHist() { var h = store.get(HKEY); return Array.isArray(h) ? h : []; }
+  function saveHist(r) {
+    var h = loadHist().filter(function (x) { return !(x.name === r.name && x.sub === r.sub); });
+    h.unshift({ name: r.name, sub: r.sub, lat: r.lat, lon: r.lon });
+    store.set(HKEY, h.slice(0, HKEEP));
+  }
+  function itemButton(r, recent) {
+    var b = document.createElement("button"); b.type = "button"; b.className = "s-item" + (recent ? " recent" : "");
+    b.innerHTML = "<b>" + esc(r.name) + "</b><small>" + esc(r.sub) + "</small>";
+    b.addEventListener("click", function () { goPlace(r); });
+    return b;
+  }
+  function renderHistory(expanded) {
+    var h = loadHist(), el = $("suggest");
+    el.innerHTML = "";
+    if (!h.length) { hideSuggest(); return; }
+    var head = document.createElement("div"); head.className = "s-head";
+    head.innerHTML = "<span>최근 검색</span>";
+    var clr = document.createElement("button"); clr.type = "button"; clr.className = "s-clear"; clr.textContent = "기록 지우기";
+    clr.addEventListener("click", function () {
+      if (window.confirm("최근 검색 기록을 모두 지울까요?")) { store.set(HKEY, []); hideSuggest(); }
+    });
+    head.appendChild(clr); el.appendChild(head);
+    var list = document.createElement("div"); list.className = "s-list" + (expanded ? " scroll" : "");
+    (expanded ? h : h.slice(0, HSHOW)).forEach(function (r) { list.appendChild(itemButton(r, true)); });
+    el.appendChild(list);
+    if (!expanded && h.length > HSHOW) {
+      var more = document.createElement("button"); more.type = "button"; more.className = "s-more";
+      more.textContent = "더보기 (" + (h.length - HSHOW) + "개)";
+      more.addEventListener("click", function () { renderHistory(true); });
+      el.appendChild(more);
+    }
+    el.classList.add("open");
+    $("info").classList.remove("open"); $("layers").classList.remove("open");
   }
 
   // ---------- 검색창 드롭다운 ----------
@@ -484,20 +524,16 @@
     var el = $("suggest"); el.innerHTML = "";
     if (busy) el.innerHTML = "<div class='s-msg'>찾는 중…</div>";
     else if (!list.length) el.innerHTML = "<div class='s-msg'>'" + esc(q) + "' 결과가 없습니다</div>";
-    list.slice(0, 12).forEach(function (r) {
-      var b = document.createElement("button"); b.type = "button"; b.className = "s-item";
-      b.innerHTML = "<b>" + esc(r.name) + "</b><small>" + esc(r.sub) + "</small>";
-      // 휴대폰에서 키보드가 닫히며 목록이 먼저 사라지지 않게 mousedown/touchstart에서 처리
-      b.addEventListener("mousedown", function (e) { e.preventDefault(); goPlace(r); });
-      b.addEventListener("touchstart", function (e) { e.preventDefault(); goPlace(r); }, { passive: false });
-      el.appendChild(b);
-    });
+    var box = document.createElement("div"); box.className = "s-list scroll";
+    list.forEach(function (r) { box.appendChild(itemButton(r, false)); });
+    el.appendChild(box);
     el.classList.add("open");
     $("info").classList.remove("open"); $("layers").classList.remove("open");
   }
   function runSuggest(now) {
     var q = $("q").value.trim();
     clearTimeout(sugTimer);
+    if (!q) { sugList = []; renderHistory(false); return; }
     if (q.length < 2) { sugList = []; hideSuggest(); return; }
     sugTimer = setTimeout(function () {
       var my = ++sugSeq;
@@ -521,8 +557,14 @@
     M.onClick(inspect);
     $("search").onsubmit = doSearch;
     $("q").addEventListener("input", function () { sugList = []; runSuggest(false); });
-    $("q").addEventListener("focus", function () { if (sugList.length) renderSuggest($("q").value.trim(), sugList, false); });
-    $("q").addEventListener("blur", function () { setTimeout(hideSuggest, 150); });
+    // 검색창을 누르면: 막 친 글자의 결과가 있으면 그것, 아니면 최근 검색
+    $("q").addEventListener("focus", function () {
+      if (sugList.length) renderSuggest($("q").value.trim(), sugList, false); else renderHistory(false);
+    });
+    // 목록 밖(지도 등)을 누르면 닫기. 목록 안 스크롤·버튼은 그대로 동작.
+    document.addEventListener("pointerdown", function (e) {
+      if (!$("top").contains(e.target)) { hideSuggest(); $("q").blur(); }
+    });
     $("bLayers").onclick = function () { $("info").classList.remove("open"); $("layers").classList.toggle("open"); };
     $("bSat").onclick = function () { $("bSat").classList.toggle("on", M.toggleSat()); };
     $("bReload").onclick = function () { loadAll(true); };

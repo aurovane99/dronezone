@@ -24,7 +24,7 @@
     background:var(--bg); color:var(--fg); font-family:inherit; }
   #search button { font-size:15px; padding:0 14px; border:0; border-radius:8px; background:var(--accent); color:#fff; font-family:inherit; }
   #status { min-width:0; line-height:1.35; }
-  #suggest { display:none; margin:0 0 6px; max-height:50vh; overflow:auto; border:1px solid var(--line);
+  #suggest { display:none; margin:0 0 6px; overflow:hidden; border:1px solid var(--line);
     border-radius:8px; background:var(--bg); }
   #suggest.open { display:block; }
   .s-item { display:block; width:100%; text-align:left; padding:9px 10px; border:0; border-top:1px solid var(--line);
@@ -34,6 +34,13 @@
   .s-item b { display:block; font-size:14px; }
   .s-item small { display:block; color:var(--muted); font-size:12px; margin-top:2px; }
   .s-msg { padding:9px 10px; color:var(--muted); }
+  .s-head { display:flex; justify-content:space-between; align-items:center; padding:7px 10px;
+    font-size:12px; color:var(--muted); border-bottom:1px solid var(--line); }
+  .s-clear { border:0; background:none; color:var(--accent); font:inherit; font-size:12px; cursor:pointer; padding:2px 0; }
+  .s-list.scroll { max-height:min(500px, 52vh); overflow-y:auto; -webkit-overflow-scrolling:touch; }
+  .s-item.recent b::before { content:"🕘 "; font-weight:normal; }
+  .s-more { display:block; width:100%; padding:9px; border:0; border-top:1px solid var(--line);
+    background:none; color:var(--accent); font:inherit; font-size:13px; cursor:pointer; }
   /* 누른 곳 말풍선 */
   .pp .leaflet-popup-content-wrapper { border-radius:10px; padding:0; background:rgba(255,255,255,.78);
     backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); box-shadow:0 4px 14px rgba(0,0,0,.25);
@@ -94,7 +101,7 @@
   <button id="bReload">↻ 새로받기</button>
 </div>
 <!-- 파일을 고치면 v= 숫자를 올려야 휴대폰이 옛 파일을 안 씀 -->
-<script src="config.js?v=12"></script>
-<script src="app.js?v=12"></script>
+<script src="config.js?v=13"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>
