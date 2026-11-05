@@ -90,9 +90,14 @@
         }
         pinL.setLatLng([lat, lon]);
         if (zoom) map.setView([lat, lon], Math.max(map.getZoom(), 16));
+      },
+      popup: function (lat, lon, html) {
+        if (!pop) pop = window.L.popup({ className: "pp", maxWidth: 230, minWidth: 120, offset: [0, -30],
+          autoPanPaddingTopLeft: [10, 120], autoPanPaddingBottomRight: [10, 90] });
+        pop.setLatLng([lat, lon]).setContent(html).openOn(map);
       }
     };
-    var pinL = null;
+    var pinL = null, pop = null;
   }
 
   function loadScript(src, ok, fail) {
@@ -338,26 +343,24 @@
   }
 
   function verdict(h) {
-    if (!h.length) return { cls: "warn", text: "표시된 구역 밖입니다. 일반 지역은 고도 150m 미만이면 대부분 승인 없이 가능하지만, 드론원스톱에서 한 번 더 확인하세요." };
+    if (!h.length) return { cls: "warn", text: "구역 밖 · 150m 미만은 대부분 승인 불필요" };
     var lv = h.map(function (x) { return x.L.level; });
-    if (lv.indexOf("bad") >= 0) return { cls: "bad", text: "비행금지구역 안입니다. 승인 없이 비행할 수 없습니다." };
-    if (lv.indexOf("warn") >= 0) return { cls: "warn", text: "비행 승인이 필요한 구역입니다. 드론원스톱에서 승인 신청하세요." };
-    return { cls: "ok", text: "초경량비행장치공역 안입니다. 고도 등 조건을 지키면 승인 없이 비행 가능합니다." };
+    if (lv.indexOf("bad") >= 0) return { cls: "bad", text: "비행금지 · 승인 필요" };
+    if (lv.indexOf("warn") >= 0) return { cls: "warn", text: "승인 필요" };
+    return { cls: "ok", text: "승인 없이 비행 가능" };
   }
 
+  // 누른 곳 옆 작은 말풍선: 구역 이름 + 코드·고도만
   function showInfo(title, lat, lon, h) {
-    var v = verdict(h);
-    var html = "<button class='x' aria-label='닫기'>×</button><h4>" + esc(title) + "</h4>" +
-      "<div class='" + v.cls + "'><b>" + esc(v.text) + "</b></div>" +
-      "<div style='color:var(--muted);margin:4px 0 6px'>" + lat.toFixed(5) + ", " + lon.toFixed(5) + "</div>";
+    var html = "";
     h.forEach(function (x) {
-      html += "<div class='z'><span class='sw' style='display:inline-block;vertical-align:middle;border-color:" + x.L.color +
-        ";background:" + x.L.color + "55'></span> <b>" + esc(x.L.name) + "</b><br>" + esc(describe(x.z.props, x.L)) + "</div>";
+      var d = describe(x.z.props, x.L);
+      html += "<div class='pp-z'><b><i style='border-color:" + x.L.color + ";background:" + x.L.color + "55'></i>" +
+        esc(x.L.name.replace(/ \(.*\)/, "")) + "</b>" + (d ? "<small>" + esc(d) + "</small>" : "") + "</div>";
     });
-    html += "<div style='margin-top:8px;color:var(--muted)'>참고용입니다. 실제 승인은 " +
-      "<a href='https://drone.onestop.go.kr' target='_blank' rel='noopener'>드론원스톱</a>에서 하세요.</div>";
-    var el = $("info"); el.innerHTML = html; el.classList.add("open"); $("layers").classList.remove("open");
-    el.querySelector(".x").onclick = function () { el.classList.remove("open"); };
+    if (!html) html = "<div class='pp-z'><b>표시된 구역 없음</b></div>";
+    $("layers").classList.remove("open");
+    M.popup(lat, lon, html);
   }
 
   var lastInspect = 0;
@@ -366,13 +369,13 @@
     lastInspect = Date.now();
     hideSuggest();
     M.pin(lat, lon, false);
-    showInfo("누른 지점", lat, lon, hits(lat, lon).filter(function (x) { return x.L.on; }));
+    showInfo("", lat, lon, hits(lat, lon).filter(function (x) { return x.L.on; }));
   }
 
   function judge(lat, lon, quiet) {
     var h = hits(lat, lon).filter(function (x) { return x.L.on; });
     var v = verdict(h);
-    if (!quiet) showInfo("내 위치", lat, lon, h);
+    if (!quiet) showInfo("", lat, lon, h);
     setStatus("<b class='" + v.cls + "'>내 위치: " + (h.length ? h.map(function (x) { return x.L.name.replace(/ \(.*\)/, ""); }).join(", ") : "표시된 구역 밖") +
       "</b><br><span style='color:var(--muted)'>정확도 약 " + Math.round(me.acc) + "m</span>");
   }
@@ -438,8 +441,8 @@
 
   function doSearch(ev) {
     ev.preventDefault();
-    // 엔터: 목록이 이미 있으면 맨 위 항목으로, 없으면 바로 검색
-    if (sugList.length && $("suggest").classList.contains("open")) return goPlace(sugList[0]);
+    // 엔터/찾기: 목록만 보여 줌. 이동은 목록에서 고를 때만.
+    if (sugList.length) return renderSuggest($("q").value.trim(), sugList, false);
     runSuggest(true);
   }
 
