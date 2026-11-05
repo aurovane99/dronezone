@@ -3,6 +3,31 @@
 (function () {
   "use strict";
   var CFG = window.DZ_CONFIG || {};
+
+  // ---------- 새 버전 자동 적용 ----------
+  // 홈 화면 앱은 켜 둔 화면을 그대로 다시 보여 주므로, 켤 때·돌아올 때 index.html의 app.js?v= 번호를 확인해
+  // 지금 것과 다르면 새로 불러온다. (주소 뒤 ?v= 를 바꿔 브라우저 저장본도 건너뜀)
+  var MY_VER = ((document.currentScript && /[?&]v=(\d+)/.exec(document.currentScript.src)) || [])[1] || "";
+  var lastCheck = 0;
+  function checkUpdate() {
+    if (!MY_VER || Date.now() - lastCheck < 60000) return;
+    lastCheck = Date.now();
+    fetch(location.pathname + "?u=" + Date.now(), { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.text() : ""; })
+      .then(function (t) {
+        var m = /app\.js\?v=(\d+)/.exec(t);
+        if (!m || m[1] === MY_VER) return;
+        // 같은 번호로 이미 한 번 다시 불렀는데도 옛 파일이면 반복하지 않음 (서버 반영 지연 대비)
+        var tried = null; try { tried = sessionStorage.getItem("dz_upd"); } catch (e) { /* 무시 */ }
+        if (tried === m[1]) return;
+        try { sessionStorage.setItem("dz_upd", m[1]); } catch (e) { /* 무시 */ }
+        location.replace(location.pathname + "?v=" + m[1] + location.hash);
+      })
+      .catch(function () { /* 오프라인이면 그냥 둠 */ });
+  }
+  document.addEventListener("visibilitychange", function () { if (!document.hidden) checkUpdate(); });
+  window.addEventListener("pageshow", checkUpdate);
+  setTimeout(checkUpdate, 3000);
   var KOREA_BOX = "BOX(124,33,132,39)";
   var CACHE_HOURS = 24;
 
