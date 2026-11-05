@@ -496,8 +496,8 @@
   function verdict(h) {
     var lv = h.filter(function (x) { return !aboveDrone(x.z.props); }).map(function (x) { return x.L.level; });
     if (lv.indexOf("bad") >= 0 || lv.indexOf("warn") >= 0) return { cls: "bad", text: "비행승인 필요" };
-    if (lv.indexOf("caution") >= 0) return { cls: "caution", text: "비행승인 불필요 (주의공역)" };
-    return { cls: "ok", text: "비행승인 불필요" };
+    if (lv.indexOf("caution") >= 0) return { cls: "caution", text: "비행 가능 (주의공역)" };
+    return { cls: "ok", text: "비행 가능 (승인 불필요)" };
   }
 
   // 누른 곳 말풍선: 판정 띠(색·아이콘) → 걸린 구역 → 주소
