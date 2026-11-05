@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#1f2937">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>드론 비행구역 지도</title>
+<style>
+  :root { --bg:#ffffff; --fg:#111827; --muted:#6b7280; --panel:#ffffffee; --line:#e5e7eb; --accent:#2563eb; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#111827; --fg:#f3f4f6; --muted:#9ca3af; --panel:#1f2937ee; --line:#374151; --accent:#60a5fa; }
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--fg);
+    font-family:-apple-system,"Malgun Gothic","Apple SD Gothic Neo",sans-serif; }
+  #map { position:fixed; inset:0; }
+  .panel { position:fixed; z-index:1000; background:var(--panel); border:1px solid var(--line);
+    border-radius:12px; box-shadow:0 2px 10px #0003; backdrop-filter:blur(6px); }
+  #top { top:10px; left:10px; right:10px; padding:8px 12px; font-size:14px; }
+  #search { display:flex; gap:6px; margin-bottom:6px; }
+  #search input { flex:1; min-width:0; font-size:16px; padding:8px 10px; border:1px solid var(--line); border-radius:8px;
+    background:var(--bg); color:var(--fg); font-family:inherit; }
+  #search button { font-size:15px; padding:0 14px; border:0; border-radius:8px; background:var(--accent); color:#fff; font-family:inherit; }
+  #status { min-width:0; line-height:1.35; }
+  #info .r { display:block; width:100%; text-align:left; padding:8px 4px; border:0; border-top:1px solid var(--line);
+    background:none; color:var(--fg); font:inherit; }
+  #info .r small { color:var(--muted); }
+  #status b { font-size:15px; }
+  #layers { top:auto; bottom:84px; left:10px; padding:8px 10px; font-size:13px; max-width:calc(100% - 20px); display:none; }
+  #layers.open { display:block; }
+  #layers label { display:flex; align-items:center; gap:6px; padding:4px 0; }
+  .sw { width:14px; height:14px; border-radius:3px; border:2px solid; flex:none; }
+  #btns { bottom:16px; left:10px; right:10px; padding:6px; display:flex; gap:6px; }
+  #btns button { flex:1; min-width:0; min-height:52px; font-size:13px; white-space:nowrap; padding:0 2px; border:1px solid var(--line); border-radius:9px;
+    background:var(--bg); color:var(--fg); font-family:inherit; }
+  #btns button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  #info { bottom:84px; left:10px; right:10px; padding:10px 12px; font-size:13px; display:none; max-height:45vh; overflow:auto; }
+  #info.open { display:block; }
+  #info h4 { margin:0 0 6px; font-size:14px; }
+  #info .z { padding:6px 0; border-top:1px solid var(--line); }
+  #info .z:first-of-type { border-top:0; }
+  #info .x { float:right; border:0; background:none; color:var(--muted); font-size:18px; }
+  .demo { color:#d97706; font-weight:bold; }
+  .me { width:18px; height:18px; border-radius:50%; background:#2563eb; border:3px solid #fff; box-shadow:0 0 0 2px #2563eb88; transform:translate(-50%,-50%); }
+  .ok { color:#16a34a; } .warn { color:#ea580c; } .bad { color:#dc2626; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="top" class="panel">
+  <form id="search"><input id="q" type="search" placeholder="주소·장소 찾기 (예: 의정부시청)" enterkeyhint="search" autocomplete="off"><button type="submit">찾기</button></form>
+  <div id="status">불러오는 중…</div>
+</div>
+<div id="info" class="panel"></div>
+<div id="layers" class="panel"></div>
+<div id="btns" class="panel">
+  <button id="bMe">📍 내 위치</button>
+  <button id="bLayers">🗂 구역 종류</button>
+  <button id="bSat">🛰 위성</button>
+  <button id="bReload">↻ 새로받기</button>
+</div>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
