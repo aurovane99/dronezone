@@ -95,7 +95,8 @@
         if (!pop) pop = window.L.popup({ className: "pp", maxWidth: 230, minWidth: 120, offset: [0, -30],
           autoPanPaddingTopLeft: [10, 120], autoPanPaddingBottomRight: [10, 90] });
         pop.setLatLng([lat, lon]).setContent(html).openOn(map);
-      }
+      },
+      popupUpdate: function (html) { if (pop && pop.isOpen()) pop.setContent(html); }
     };
     var pinL = null, pop = null;
   }
@@ -383,21 +384,39 @@
     return { cls: "ok", text: "승인 없이 비행 가능" };
   }
 
-  // 누른 곳 옆 작은 말풍선: 구역 이름 + 코드·고도만
+  // 누른 곳 옆 작은 말풍선: 판정(맨 위) → 구역(이름·코드·고도) → 주소
+  var popSeq = 0;
   function showInfo(title, lat, lon, h) {
-    var html = "";
+    var v = verdict(h);
+    var ok = v.cls === "ok" || !h.length;
+    var html = "<div class='pp-v first " + (ok ? "ok" : "bad") + "'>" + (ok ? "비행 가능" : "비행승인 필요") + "</div>";
     h.forEach(function (x) {
       var d = zoneText(x.z.props, x.L) || describe(x.z.props, x.L);
       html += "<div class='pp-z'><b><i style='border-color:" + x.L.color + ";background:" + x.L.color + "55'></i>" +
         esc(x.L.name.replace(/ \(.*\)/, "")) + "</b>" + (d ? "<small>" + esc(d) + "</small>" : "") + "</div>";
     });
-    if (!html) html = "<div class='pp-z'><b>표시된 구역 없음</b></div>";
-    // 맨 아래 한 줄 판정
-    var v = verdict(h);
-    var txt = v.cls === "ok" ? "비행 가능" : (h.length ? "비행승인 필요" : "비행 가능 (고도 150m 미만)");
-    html += "<div class='pp-v " + (txt.indexOf("가능") >= 0 ? "ok" : "bad") + "'>" + txt + "</div>";
     $("layers").classList.remove("open");
-    M.popup(lat, lon, html);
+    var my = ++popSeq;
+    M.popup(lat, lon, html + "<div class='pp-a'><small>주소 확인 중…</small></div>");
+    getAddress(lat, lon).then(function (a) {
+      if (my !== popSeq) return;   // 그 사이 다른 곳을 눌렀으면 버림
+      var ah = a.parcel || a.road ? "<div class='pp-a'>" + esc(a.parcel || a.road) +
+        (a.parcel && a.road ? "<small>" + esc(a.road) + "</small>" : "") + "</div>" : "";
+      M.popupUpdate(html + ah);
+    });
+  }
+
+  // 좌표 → 주소 (브이월드 지오코더). 실패하면 빈 값.
+  function getAddress(lat, lon) {
+    if (!CFG.vworldKey) return Promise.resolve({});
+    var url = "https://api.vworld.kr/req/address?service=address&request=getAddress&version=2.0&crs=epsg:4326" +
+      "&point=" + lon.toFixed(7) + "," + lat.toFixed(7) + "&format=json&type=both&zipcode=false&simple=false" +
+      "&key=" + encodeURIComponent(CFG.vworldKey) + "&domain=" + encodeURIComponent(CFG.vworldDomain || location.origin);
+    return jsonp(url, 8000).then(function (d) {
+      var r = d && d.response, out = {};
+      if (r && r.status === "OK") (r.result || []).forEach(function (x) { out[x.type] = x.text; });
+      return out;
+    }, function () { return {}; });
   }
 
   var lastInspect = 0;
