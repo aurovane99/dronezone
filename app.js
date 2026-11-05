@@ -24,6 +24,13 @@
   var savedOn = store.get("dz_layers_on");
   if (savedOn) LAYERS.forEach(function (L) { if (L.id in savedOn) L.on = !!savedOn[L.id]; });
 
+  // 키: 링크 뒤 #k=키 로 한 번 열면 이 기기에 저장 (주소창에서는 바로 지움)
+  var hk = /[#&]k=([0-9A-Fa-f-]{20,})/.exec(location.hash);
+  if (hk) {
+    store.set("dz_vworld_key", hk[1].toUpperCase());
+    try { history.replaceState(null, "", location.pathname + location.search); } catch (e) { /* 무시 */ }
+  }
+  if (!CFG.vworldKey) CFG.vworldKey = store.get("dz_vworld_key") || "";
   var demo = !CFG.vworldKey;
   var M;             // 지도 어댑터
   var zones = {};    // layerId -> [{props, rings:[[ [lat,lon], ... ], ...]}]  (polygon 단위)
@@ -87,11 +94,23 @@
   var pinM = null;
 
   function leafletAdapter() {
-    var map = window.L.map("map", { zoomControl: true }).setView([37.738, 127.034], 11);
-    var road = window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-      { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(map);
-    var satL = window.L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-      { maxZoom: 19, attribution: "Esri" });
+    var map = window.L.map("map", { zoomControl: false, minZoom: 6, maxZoom: 19 }).setView([37.738, 127.034], 11);
+    var road, satL;
+    if (CFG.vworldKey) {
+      // 브이월드 배경지도: 일반 / 위성+지명
+      var base = "https://api.vworld.kr/req/wmts/1.0.0/" + encodeURIComponent(CFG.vworldKey) + "/";
+      var att = "© 브이월드(국토교통부)";
+      road = window.L.tileLayer(base + "Base/{z}/{y}/{x}.png", { maxZoom: 19, attribution: att });
+      satL = window.L.layerGroup([
+        window.L.tileLayer(base + "Satellite/{z}/{y}/{x}.jpeg", { maxZoom: 19, attribution: att }),
+        window.L.tileLayer(base + "Hybrid/{z}/{y}/{x}.png", { maxZoom: 19 })
+      ]);
+    } else {
+      road = window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" });
+      satL = window.L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        { maxZoom: 19, attribution: "Esri" });
+    }
+    road.addTo(map);
     var meDot = null, meCircle = null, sat = false, clickFn = null, lastPolyClick = 0;
     return {
       kind: "leaflet",
@@ -122,7 +141,8 @@
         pinL.setLatLng([lat, lon]); map.setView([lat, lon], 15);
       },
       search: function (q) {
-        // 미리보기용: OSM 검색 (카카오 키가 생기면 카카오 검색으로 바뀜)
+        if (CFG.vworldKey) return vworldSearch(q);
+        // 키 없을 때 미리보기용: OSM 검색
         return fetch("https://nominatim.openstreetmap.org/search?format=json&countrycodes=kr&limit=8&accept-language=ko&q=" + encodeURIComponent(q))
           .then(function (r) { return r.json(); })
           .then(function (d) { return d.map(function (x) { return { name: x.display_name.split(",")[0], sub: x.display_name, lat: +x.lat, lon: +x.lon }; }); });
@@ -190,6 +210,37 @@
     return page(1);
   }
 
+  // 브이월드 검색: 도로명주소 + 지번주소 + 장소이름을 한 번에 찾아 합침
+  function vworldSearch(q) {
+    var domain = CFG.vworldDomain || location.origin;
+    function one(type, category) {
+      var url = "https://api.vworld.kr/req/search?service=search&request=search&version=2.0&crs=EPSG:4326&size=10&page=1" +
+        "&format=json&errorformat=json&type=" + type + (category ? "&category=" + category : "") +
+        "&query=" + encodeURIComponent(q) + "&key=" + encodeURIComponent(CFG.vworldKey) + "&domain=" + encodeURIComponent(domain);
+      return jsonp(url, 15000).then(function (d) {
+        var r = d && d.response;
+        if (!r || r.status !== "OK") {
+          if (r && r.status === "ERROR") throw new Error(((r.error || {}).code || "") + " " + ((r.error || {}).text || ""));
+          return [];
+        }
+        return ((r.result || {}).items || []).map(function (it) {
+          var a = it.address || {}, p = it.point || {};
+          var name = type === "place" ? it.title : (category === "road" ? a.road : a.parcel) || it.title;
+          var sub = type === "place" ? (a.road || a.parcel || "") : (category === "road" ? a.parcel : a.road) || "";
+          return { name: name || "", sub: sub || "", lat: +p.y, lon: +p.x };
+        });
+      }, function () { return []; });
+    }
+    return Promise.all([one("address", "road"), one("address", "parcel"), one("place")]).then(function (rs) {
+      var out = [], seen = {};
+      rs.forEach(function (list) { list.forEach(function (r) {
+        var k = r.lat.toFixed(5) + "," + r.lon.toFixed(5);
+        if (isFinite(r.lat) && !seen[k]) { seen[k] = 1; out.push(r); }
+      }); });
+      return out;
+    });
+  }
+
   function demoFeatures(L) {
     // 키가 없을 때 화면 시험용. 실제 구역이 아님.
     var c = { LT_C_AISPRHC: [37.76, 127.00], LT_C_AISRESC: [37.70, 127.10], LT_C_AISCTRC: [37.66, 126.98],
@@ -233,11 +284,17 @@
       }).then(function () { done++; setStatus("구역 정보를 받는 중… (" + done + "/" + LAYERS.length + ")"); });
     })).then(function () {
       var n = LAYERS.reduce(function (s, L) { return s + zones[L.id].length; }, 0);
-      var msg = demo ? "<span class='demo'>시험 모드: 브이월드 키가 없어 가짜 구역을 보여 줍니다.</span>"
+      var msg = demo ? "<span class='demo'>시험 모드: 이 기기에 키가 없어 가짜 구역을 보여 줍니다.</span> " +
+                       "<button id='bKey' type='button'>키 넣기</button>"
                      : "<b>구역 " + n + "개 표시</b> · 지도를 누르면 그 지점의 구역을 알려 줍니다.";
-      if (M.kind === "leaflet") msg += "<br><span class='demo'>카카오 키가 없어 미리보기 지도(OSM)를 씁니다.</span>";
+      if (M.kind === "leaflet" && !CFG.vworldKey) msg += "<br><span class='demo'>키가 없어 미리보기 지도(OSM)를 씁니다.</span>";
       if (fails.length) msg += "<br><span class='bad'>못 받은 구역: " + fails.join(" / ") + "</span>";
       setStatus(msg);
+      var bk = $("bKey");
+      if (bk) bk.onclick = function () {
+        var k = (window.prompt("브이월드 인증키를 붙여 넣으세요") || "").trim();
+        if (/^[0-9A-Fa-f-]{20,}$/.test(k)) { store.set("dz_vworld_key", k.toUpperCase()); location.reload(); }
+      };
       if (me) judge(me.lat, me.lon, true);
     });
   }
