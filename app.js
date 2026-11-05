@@ -38,7 +38,7 @@
     { id: "LT_C_AISFLDC", name: "경량항공기 이착륙장", desc: "반경 3km, 비행승인 대상", color: "#c0a000", fill: 0.15, on: true, level: "warn" },
     { id: "LT_C_AISDNGC", name: "위험구역", desc: "D구역, 비행승인 대상(보수적 적용)", color: "#c2185b", fill: 0.2, on: false, level: "warn" },
     { id: "LT_C_AISALTC", name: "경계구역", desc: "A구역, 주의공역", color: "#6d4c41", fill: 0.15, on: false, level: "caution" },
-    { id: "LT_C_AISUAC", name: "초경량비행장치공역", desc: "UA구역, 비행승인 불요", color: "#43a047", fill: 0.2, on: true, level: "ok" }
+    { id: "LT_C_AISUAC", name: "초경량비행장치공역", desc: "UA구역, 비행승인 불필요", color: "#43a047", fill: 0.2, on: true, level: "ok" }
   ];
 
   var $ = function (id) { return document.getElementById(id); };
@@ -496,8 +496,8 @@
   function verdict(h) {
     var lv = h.filter(function (x) { return !aboveDrone(x.z.props); }).map(function (x) { return x.L.level; });
     if (lv.indexOf("bad") >= 0 || lv.indexOf("warn") >= 0) return { cls: "bad", text: "비행승인 필요" };
-    if (lv.indexOf("caution") >= 0) return { cls: "caution", text: "비행승인 불요 (주의공역)" };
-    return { cls: "ok", text: "비행승인 불요" };
+    if (lv.indexOf("caution") >= 0) return { cls: "caution", text: "비행승인 불필요 (주의공역)" };
+    return { cls: "ok", text: "비행승인 불필요" };
   }
 
   // 누른 곳 말풍선: 판정 띠(색·아이콘) → 걸린 구역 → 주소
