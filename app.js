@@ -32,13 +32,13 @@
   var CACHE_HOURS = 24;
 
   var LAYERS = [
-    { id: "LT_C_AISPRHC", name: "비행금지구역", desc: "승인 필요", color: "#e53935", fill: 0.18, on: true, level: "bad" },
-    { id: "LT_C_AISRESC", name: "비행제한구역", desc: "승인 필요", color: "#fb8c00", fill: 0.25, on: true, level: "warn" },
-    { id: "LT_C_AISCTRC", name: "관제권", desc: "공항 반경 9.3km, 승인 필요", color: "#8e24aa", fill: 0.15, on: true, level: "warn" },
-    { id: "LT_C_AISFLDC", name: "경량항공기 이착륙장", desc: "반경 3km, 승인 필요", color: "#c0a000", fill: 0.15, on: true, level: "warn" },
-    { id: "LT_C_AISDNGC", name: "위험구역", desc: "승인 필요로 봄", color: "#c2185b", fill: 0.2, on: false, level: "warn" },
-    { id: "LT_C_AISALTC", name: "경계구역", desc: "훈련 비행이 잦은 곳, 주의", color: "#6d4c41", fill: 0.15, on: false, level: "caution" },
-    { id: "LT_C_AISUAC", name: "초경량비행장치공역", desc: "승인 없이 비행 가능", color: "#43a047", fill: 0.2, on: true, level: "ok" }
+    { id: "LT_C_AISPRHC", name: "비행금지구역", desc: "P구역, 비행승인 대상", color: "#e53935", fill: 0.18, on: true, level: "bad" },
+    { id: "LT_C_AISRESC", name: "비행제한구역", desc: "R구역, 비행승인 대상", color: "#fb8c00", fill: 0.25, on: true, level: "warn" },
+    { id: "LT_C_AISCTRC", name: "관제권", desc: "비행장 반경 9.3km(5NM), 비행승인 대상", color: "#8e24aa", fill: 0.15, on: true, level: "warn" },
+    { id: "LT_C_AISFLDC", name: "경량항공기 이착륙장", desc: "반경 3km, 비행승인 대상", color: "#c0a000", fill: 0.15, on: true, level: "warn" },
+    { id: "LT_C_AISDNGC", name: "위험구역", desc: "D구역, 비행승인 대상(보수적 적용)", color: "#c2185b", fill: 0.2, on: false, level: "warn" },
+    { id: "LT_C_AISALTC", name: "경계구역", desc: "A구역, 주의공역", color: "#6d4c41", fill: 0.15, on: false, level: "caution" },
+    { id: "LT_C_AISUAC", name: "초경량비행장치공역", desc: "UA구역, 비행승인 불요", color: "#43a047", fill: 0.2, on: true, level: "ok" }
   ];
 
   var $ = function (id) { return document.getElementById(id); };
@@ -205,7 +205,7 @@
 
   function loadScript(src, ok, fail) {
     var s = document.createElement("script"); s.src = src; s.onload = ok;
-    s.onerror = fail || function () { setStatus("<span class='bad'>지도 스크립트를 불러오지 못했습니다.</span>"); };
+    s.onerror = fail || function () { setStatus("<span class='bad'>지도 모듈 로드 실패. 네트워크 연결을 확인하십시오.</span>"); };
     document.head.appendChild(s);
   }
 
@@ -294,7 +294,7 @@
         if (r.status === "NOT_FOUND") return all;
         if (r.status !== "OK") {
           var er = r.error || {};
-          var hint = /KEY/.test(er.code || "") ? " (키 또는 등록 주소 확인)" : "";
+          var hint = /KEY/.test(er.code || "") ? " (인증키 또는 등록 도메인 확인)" : "";
           throw new Error((er.code || r.status) + " " + (er.text || "") + hint);
         }
         var fc = (r.result && r.result.featureCollection) || {};
@@ -369,7 +369,7 @@
   function loadAll(force) {
     LAYERS.forEach(function (L) { (shapes[L.id] || []).forEach(function (s) { s.show(false); }); shapes[L.id] = []; zones[L.id] = []; });
     var fails = [], done = 0;
-    setStatus("구역 정보를 받는 중… (0/" + LAYERS.length + ")");
+    setStatus("공역 데이터 수신 중 (0/" + LAYERS.length + ")");
     return Promise.all(LAYERS.map(function (L) {
       var key = "dz_cache_v1_" + L.id, c = store.get(key);
       var p;
@@ -379,17 +379,17 @@
       return p.then(function (f) { addLayer(L, f); }, function (e) {
         fails.push(L.name + ": " + e.message);
         if (c) addLayer(L, c.f); // 실패하면 지난번 받은 것이라도
-      }).then(function () { done++; setStatus("구역 정보를 받는 중… (" + done + "/" + LAYERS.length + ")"); });
+      }).then(function () { done++; setStatus("공역 데이터 수신 중 (" + done + "/" + LAYERS.length + ")"); });
     })).then(function () {
       var n = LAYERS.reduce(function (s, L) { return s + zones[L.id].length; }, 0);
-      var msg = demo ? "<span class='demo'>시험 모드입니다. 이 기기에 키가 없어 가짜 구역과 일반 지도를 보여 줍니다.</span>" +
-                       "<button id='bKey' class='key-btn' type='button'>키 넣기</button>"
-                     : "<b>공역 " + n + "곳</b>을 불러왔습니다. 지도를 누르면 비행 가능 여부가 나옵니다.";
-      if (fails.length) msg += "<br><span class='bad'>못 받은 구역: " + fails.join(", ") + ". 새로받기를 눌러 보세요.</span>";
+      var msg = demo ? "<span class='demo'>시험 모드: 인증키 미등록 상태로 예시 공역과 일반 지도를 표시합니다.</span>" +
+                       "<button id='bKey' class='key-btn' type='button'>인증키 입력</button>"
+                     : "<b>공역 " + n + "개소</b> 수신 완료. 지점을 선택하면 비행승인 여부를 판정합니다.";
+      if (fails.length) msg += "<br><span class='bad'>수신 실패: " + fails.join(", ") + ". 공역 데이터 갱신으로 재시도하십시오.</span>";
       setStatus(msg);
       var bk = $("bKey");
       if (bk) bk.onclick = function () {
-        var k = (window.prompt("브이월드 인증키를 붙여 넣으세요") || "").trim();
+        var k = (window.prompt("브이월드 인증키를 입력하십시오") || "").trim();
         if (/^[0-9A-Fa-f-]{20,}$/.test(k)) { store.set("dz_vworld_key", k.toUpperCase()); location.reload(); }
       };
       if (me) judge(me.lat, me.lon, true);
@@ -431,15 +431,15 @@
   // 고도 글자 해석: "5 000 AMSL" → 해발 5,000ft(1,524m), "500FT HEI"/"1 000 AGL" → 지상 …, FL180, GND/SFC, UNL
   function parseAlt(s) {
     var t = String(s).toUpperCase().replace(/\s+/g, " ").trim();
-    if (/^(GND|SFC)$/.test(t)) return { ft: 0, txt: "지면", agl: true };
-    if (t === "UNL") return { ft: 1e9, txt: "무제한" };
+    if (/^(GND|SFC)$/.test(t)) return { ft: 0, txt: "지표면(GND)", agl: true };
+    if (t === "UNL") return { ft: 1e9, txt: "상한 없음(UNL)" };
     var fl = /^FL\s?(\d+)$/.exec(t);
     if (fl) { var f = +fl[1] * 100; return { ft: f, txt: "FL" + fl[1] + "(약 " + Math.round(f * 0.3048).toLocaleString() + "m)" }; }
     var m = /^([\d ,]+)\s*(FT)?\s*(AMSL|MSL|AGL|HEI)?$/.exec(t);
     if (!m) return null;
     var ft = +m[1].replace(/[ ,]/g, ""); if (!isFinite(ft)) return null;
     var agl = m[3] === "AGL" || m[3] === "HEI";
-    var ref = agl ? "지상 " : (m[3] ? "해발 " : "");
+    var ref = agl ? "지표면 기준 " : (m[3] ? "해발 " : "");
     return { ft: ft, agl: agl, txt: ref + ft.toLocaleString() + "ft(" + Math.round(ft * 0.3048).toLocaleString() + "m)" };
   }
 
@@ -496,8 +496,8 @@
   function verdict(h) {
     var lv = h.filter(function (x) { return !aboveDrone(x.z.props); }).map(function (x) { return x.L.level; });
     if (lv.indexOf("bad") >= 0 || lv.indexOf("warn") >= 0) return { cls: "bad", text: "비행승인 필요" };
-    if (lv.indexOf("caution") >= 0) return { cls: "caution", text: "비행 가능 (주의)" };
-    return { cls: "ok", text: "비행 가능" };
+    if (lv.indexOf("caution") >= 0) return { cls: "caution", text: "비행승인 불요 (주의공역)" };
+    return { cls: "ok", text: "비행승인 불요" };
   }
 
   // 누른 곳 말풍선: 판정 띠(색·아이콘) → 걸린 구역 → 주소
@@ -519,16 +519,16 @@
       return;
     }
     // 공원 여부를 확인한 뒤에 판정을 보여 줌(먼저 '가능'이 떴다가 바뀌지 않게)
-    M.popup(lat, lon, "<div class='pp-v wait'>" + ICON.clock + "확인 중…</div><div class='pp-body'>" + zonesHtml + "</div>");
+    M.popup(lat, lon, "<div class='pp-v wait'>" + ICON.clock + "조회 중</div><div class='pp-body'>" + zonesHtml + "</div>");
     Promise.all([parksAt(lat, lon), getAddress(lat, lon)]).then(function (r) {
       if (my !== popSeq) return;   // 그 사이 다른 곳을 눌렀으면 버림
       var parks = r[0], a = r[1];
       var v = verdict(h);
-      if (parks.length && v.cls !== "bad") v = { cls: "bad", text: "공원 허가 필요" };
+      if (parks.length && v.cls !== "bad") v = { cls: "bad", text: "공원 행위허가 필요" };
       var ph = parks.map(function (p) {
         return "<div class='pp-z'><i class='sw park' style='border-color:" + p.P.color + "'></i><div><b>" + esc(p.P.name) + "</b>" +
           (p.name ? "<span class='code'>" + esc(p.name) + "</span>" : "") +
-          "<small>관리사무소 허가 필요, 개인 촬영은 보통 불가</small></div></div>";
+          "<small>자연공원법상 공원관리청 행위허가 대상 (사적 촬영 목적은 통상 불허)</small></div></div>";
       }).join("");
       var ah = a.parcel || a.road ? "<div class='pp-a'>" + esc(a.parcel || a.road) +
         (a.parcel && a.road ? "<small>" + esc(a.road) + "</small>" : "") + "</div>" : "";
@@ -546,7 +546,7 @@
       html += "<div class='pp-z" + (up ? " dim" : "") + "'><i class='sw' style='border-color:" + x.L.color + ";background:" + x.L.color + "44'></i><div>" +
         "<b>" + esc(x.L.name) + "</b>" + (p.code ? "<span class='code'>" + esc(p.code) + "</span>" : "") +
         (line ? "<small>" + esc(line) + "</small>" : "") +
-        (up ? "<small>드론 고도(150m)보다 위라 해당 없음</small>" : "") + "</div></div>";
+        (up ? "<small>하한고도가 150m를 초과하여 적용 제외</small>" : "") + "</div></div>";
     });
     return html;
   }
@@ -579,13 +579,13 @@
     if (!quiet) showInfo("", lat, lon, h);
     var names = h.map(function (x) { return x.L.name; });
     function show(vv, nn) {
-      setStatus("<b class='" + vv.cls + "'>내 위치 " + vv.text + "</b>" + (nn.length ? ", " + nn.join(", ") : "") +
-        " <span style='color:var(--ink-3)'>(정확도 약 " + Math.round(me.acc) + "m)</span>");
+      setStatus("<b class='" + vv.cls + "'>현위치 " + vv.text + "</b>" + (nn.length ? ", " + nn.join(", ") : "") +
+        " <span style='color:var(--ink-3)'>(GPS 오차 약 " + Math.round(me.acc) + "m)</span>");
     }
     show(v, names);
     parksAt(lat, lon).then(function (parks) {
       if (!parks.length) return;
-      var vv = v.cls === "bad" ? v : { cls: "bad", text: "공원 허가 필요" };
+      var vv = v.cls === "bad" ? v : { cls: "bad", text: "공원 행위허가 필요" };
       show(vv, names.concat(parks.map(function (p) { return p.name ? p.name + " " + p.P.name : p.P.name; })));
     });
   }
@@ -594,7 +594,7 @@
 
   // ---------- 버튼 ----------
   function buildLayerPanel() {
-    var el = $("layers"); el.innerHTML = "<h3>지도에 표시할 구역</h3>";
+    var el = $("layers"); el.innerHTML = "<h3>공역 표시 설정</h3>";
     LAYERS.forEach(function (L) {
       var lab = document.createElement("label");
       var cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = L.on;
@@ -615,7 +615,7 @@
     var cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = parksOn; cb.setAttribute("aria-label", "자연공원");
     var sw = document.createElement("span"); sw.className = "sw park"; sw.style.borderColor = PARKS[0].color;
     var t = document.createElement("span"); t.className = "t";
-    t.innerHTML = "국립·도립·군립공원<small>관리사무소 허가 필요. 확대하면 경계가 보입니다</small>";
+    t.innerHTML = "자연공원 (국립·도립·군립)<small>공원관리청 행위허가 대상, 확대 시 경계 표시</small>";
     lab.appendChild(sw); lab.appendChild(t); lab.appendChild(cb);
     cb.onchange = function () {
       parksOn = cb.checked; store.set("dz_parks_on", parksOn);
@@ -624,7 +624,7 @@
     };
     el.appendChild(lab);
     var note = document.createElement("p");
-    note.textContent = "꺼 둔 구역도 지도를 눌렀을 때 판정에는 들어갑니다.";
+    note.textContent = "표시를 끈 공역도 지점 판정에는 포함됩니다.";
     el.appendChild(note);
   }
 
@@ -659,9 +659,9 @@
     if (!h.length) { hideSuggest(); return; }
     var head = document.createElement("div"); head.className = "s-head";
     head.innerHTML = "<span>최근 검색</span>";
-    var clr = document.createElement("button"); clr.type = "button"; clr.className = "s-clear"; clr.textContent = "기록 지우기";
+    var clr = document.createElement("button"); clr.type = "button"; clr.className = "s-clear"; clr.textContent = "기록 삭제";
     clr.addEventListener("click", function () {
-      if (window.confirm("최근 검색 기록을 모두 지울까요?")) { store.set(HKEY, []); hideSuggest(); }
+      if (window.confirm("최근 검색 기록을 모두 삭제하시겠습니까?")) { store.set(HKEY, []); hideSuggest(); }
     });
     head.appendChild(clr); el.appendChild(head);
     var list = document.createElement("div"); list.className = "s-list" + (expanded ? " scroll" : "");
@@ -669,7 +669,7 @@
     el.appendChild(list);
     if (!expanded && h.length > HSHOW) {
       var more = document.createElement("button"); more.type = "button"; more.className = "s-more";
-      more.textContent = "더보기 (" + (h.length - HSHOW) + "개)";
+      more.textContent = "더보기 (" + (h.length - HSHOW) + "건)";
       more.addEventListener("click", function () { renderHistory(true); });
       el.appendChild(more);
     }
@@ -682,8 +682,8 @@
   function hideSuggest() { $("suggest").classList.remove("open"); }
   function renderSuggest(q, list, busy) {
     var el = $("suggest"); el.innerHTML = "";
-    if (busy) el.innerHTML = "<div class='s-msg'>찾는 중…</div>";
-    else if (!list.length) el.innerHTML = "<div class='s-msg'>'" + esc(q) + "' 결과가 없습니다</div>";
+    if (busy) el.innerHTML = "<div class='s-msg'>검색 중</div>";
+    else if (!list.length) el.innerHTML = "<div class='s-msg'>'" + esc(q) + "' 검색 결과 없음</div>";
     var box = document.createElement("div"); box.className = "s-list scroll";
     list.forEach(function (r) { box.appendChild(itemButton(r, false)); });
     el.appendChild(box);
@@ -751,9 +751,9 @@
     window.addEventListener("resize", placeButtons);
     if (window.ResizeObserver) new ResizeObserver(placeButtons).observe($("top"));
     $("bMe").onclick = function () {
-      if (!navigator.geolocation) { setStatus("<span class='bad'>이 기기에서는 위치를 쓸 수 없습니다.</span>"); return; }
+      if (!navigator.geolocation) { setStatus("<span class='bad'>이 기기는 위치 정보를 지원하지 않습니다.</span>"); return; }
       if (watchId !== null) { if (me) { M.setMe(me.lat, me.lon, me.acc, true); judge(me.lat, me.lon); } return; }
-      setStatus("위치를 찾는 중…");
+      setStatus("현위치 조회 중");
       var first = true;
       watchId = navigator.geolocation.watchPosition(function (p) {
         me = { lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy || 30 };
@@ -761,7 +761,7 @@
         $("bMe").classList.add("on");
       }, function (e) {
         watchId = null;
-        setStatus("<span class='bad'>위치를 못 찾았습니다: " + esc(e.message) + "</span><br>위치 권한을 허용했는지 확인하세요.");
+        setStatus("<span class='bad'>위치 정보 수신 실패: " + esc(e.message) + "</span><br>브라우저의 위치 권한 설정을 확인하십시오.");
       }, { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 });
     };
     loadAll(false);
