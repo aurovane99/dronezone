@@ -118,7 +118,7 @@
       },
       popup: function (lat, lon, html) {
         if (!pop) pop = window.L.popup({ className: "pp", maxWidth: 230, minWidth: 120, offset: [0, -30],
-          autoPanPaddingTopLeft: [10, 120], autoPanPaddingBottomRight: [10, 90] });
+          autoPanPaddingTopLeft: [10, 120], autoPanPaddingBottomRight: [70, 30] });
         pop.setLatLng([lat, lon]).setContent(html).openOn(map);
       },
       popupUpdate: function (html) { if (pop && pop.isOpen()) pop.setContent(html); }
@@ -592,7 +592,19 @@
     });
     $("bLayers").onclick = function () { $("info").classList.remove("open"); $("layers").classList.toggle("open"); };
     $("bSat").onclick = function () { $("bSat").classList.toggle("on", M.toggleSat()); };
-    $("bReload").onclick = function () { loadAll(true); };
+    $("bReload").onclick = function () {
+      var b = $("bReload"); b.classList.add("spin");
+      loadAll(true).then(function () { b.classList.remove("spin"); }, function () { b.classList.remove("spin"); });
+    };
+    // 오른쪽 아이콘 줄은 검색창 바로 아래에. 드롭다운이 열려도 아이콘은 제자리(드롭다운이 위로 덮음).
+    function placeButtons() {
+      var top = $("top"), sug = $("suggest");
+      var h = top.offsetTop + top.offsetHeight - (sug.classList.contains("open") ? sug.offsetHeight + 6 : 0);
+      document.documentElement.style.setProperty("--btns-top", (h + 8) + "px");
+    }
+    placeButtons();
+    window.addEventListener("resize", placeButtons);
+    if (window.ResizeObserver) new ResizeObserver(placeButtons).observe($("top"));
     $("bMe").onclick = function () {
       if (!navigator.geolocation) { setStatus("<span class='bad'>이 기기에서는 위치를 쓸 수 없습니다.</span>"); return; }
       if (watchId !== null) { if (me) { M.setMe(me.lat, me.lon, me.acc, true); judge(me.lat, me.lon); } return; }

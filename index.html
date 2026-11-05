@@ -22,7 +22,8 @@
   #search { display:flex; gap:6px; margin-bottom:6px; }
   #search input { flex:1; min-width:0; font-size:16px; padding:8px 10px; border:1px solid var(--line); border-radius:8px;
     background:var(--bg); color:var(--fg); font-family:inherit; }
-  #search button { font-size:15px; padding:0 14px; border:0; border-radius:8px; background:var(--accent); color:#fff; font-family:inherit; }
+  #search button { width:44px; padding:0; border:0; border-radius:8px; background:var(--accent); color:#fff; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; flex:none; }
   #status { min-width:0; line-height:1.35; }
   #suggest { display:none; margin:0 0 6px; overflow:hidden; border:1px solid var(--line);
     border-radius:8px; background:var(--bg); }
@@ -66,14 +67,20 @@
     background:none; color:var(--fg); font:inherit; }
   #info .r small { color:var(--muted); }
   #status b { font-size:15px; }
-  #layers { top:auto; bottom:84px; left:10px; padding:8px 10px; font-size:13px; max-width:calc(100% - 20px); display:none; }
+  #top { z-index:1100; }  /* 검색 드롭다운이 오른쪽 아이콘 위로 덮이게 */
+  /* 구역 종류 창: 오른쪽 아이콘 줄 왼쪽에 */
+  #layers { top:var(--btns-top, 110px); right:66px; padding:8px 10px; font-size:13px; max-width:calc(100% - 86px); display:none; }
   #layers.open { display:block; }
   #layers label { display:flex; align-items:center; gap:6px; padding:4px 0; }
   .sw { width:14px; height:14px; border-radius:3px; border:2px solid; flex:none; }
-  #btns { bottom:16px; left:10px; right:10px; padding:6px; display:flex; gap:6px; }
-  #btns button { flex:1; min-width:0; min-height:52px; font-size:13px; white-space:nowrap; padding:0 2px; border:1px solid var(--line); border-radius:9px;
-    background:var(--bg); color:var(--fg); font-family:inherit; }
+  /* 오른쪽 위 세로 아이콘 버튼 (top은 검색창 높이에 맞춰 app.js가 정함) */
+  #btns { top:var(--btns-top, 110px); right:10px; padding:5px; display:flex; flex-direction:column; gap:5px; border-radius:14px; }
+  #btns button { width:44px; height:44px; padding:0; font-size:20px; line-height:1; border:1px solid var(--line); border-radius:10px;
+    background:var(--bg); color:var(--fg); cursor:pointer; display:flex; align-items:center; justify-content:center; }
+  #btns button:active { transform:scale(.94); }
   #btns button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  #btns button.spin { animation:dzspin 1s linear infinite; }
+  @keyframes dzspin { to { transform:rotate(360deg); } }
   #info { bottom:84px; left:10px; right:10px; padding:10px 12px; font-size:13px; display:none; max-height:45vh; overflow:auto; }
   #info.open { display:block; }
   #info h4 { margin:0 0 6px; font-size:14px; }
@@ -88,20 +95,20 @@
 <body>
 <div id="map"></div>
 <div id="top" class="panel">
-  <form id="search"><input id="q" type="search" placeholder="주소·장소 찾기 (예: 의정부시청)" enterkeyhint="search" autocomplete="off"><button type="submit">찾기</button></form>
+  <form id="search"><input id="q" type="search" placeholder="주소·장소 찾기 (예: 의정부시청)" enterkeyhint="search" autocomplete="off"><button type="submit" title="찾기" aria-label="찾기"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg></button></form>
   <div id="suggest"></div>
   <div id="status">불러오는 중…</div>
 </div>
 <div id="info" class="panel"></div>
 <div id="layers" class="panel"></div>
 <div id="btns" class="panel">
-  <button id="bMe">📍 내 위치</button>
-  <button id="bLayers">🗂 구역 종류</button>
-  <button id="bSat">🛰 위성</button>
-  <button id="bReload">↻ 새로받기</button>
+  <button id="bMe" title="내 위치" aria-label="내 위치">📍</button>
+  <button id="bLayers" title="구역 종류" aria-label="구역 종류">🗂</button>
+  <button id="bSat" title="위성 사진" aria-label="위성 사진">🛰</button>
+  <button id="bReload" title="구역 새로받기" aria-label="구역 새로받기">↻</button>
 </div>
 <!-- 파일을 고치면 v= 숫자를 올려야 휴대폰이 옛 파일을 안 씀 -->
-<script src="config.js?v=15"></script>
-<script src="app.js?v=15"></script>
+<script src="config.js?v=16"></script>
+<script src="app.js?v=16"></script>
 </body>
 </html>
